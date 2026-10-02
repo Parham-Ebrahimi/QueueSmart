@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, Check, CheckCircle2, Clock3, Eye, EyeOff, Info, MapPin, Plus, RefreshCw, Users } from 'lucide-react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import AdminDashboardPage from './components/AdminDashboard.jsx';
+import AdminQueuePage from './components/AdminQueue.jsx';
+import AdminServicesPage from './components/AdminServices.jsx';
 import AppShell from './components/AppShell.jsx';
 import AccountSettings from './components/AccountSettings.jsx';
 import Brand from './components/Brand.jsx';
@@ -115,7 +118,8 @@ function UserDashboard({ queue, onJoin }) {
         {mockServices.slice(0, 2).map(item => {
           const activeQueue = queue?.status !== 'served' ? queue : null;
           const alreadyJoined = activeQueue?.serviceId === item.id;
-          return <article className="service-preview" key={item.id}><span className="service-category">{item.category}</span><h3>{item.name}</h3><p><MapPin size={14} />{item.location}</p><span className="service-wait"><Clock3 size={14} />{item.waiting} {item.waiting === 1 ? 'person' : 'people'} waiting</span><button className={`service-preview-action ${alreadyJoined ? 'joined' : ''}`} onClick={() => !activeQueue && onJoin(item)} disabled={Boolean(activeQueue)}>{alreadyJoined ? <><Check size={15} />In your queue</> : activeQueue ? 'Leave current queue to join' : <>Join queue<ArrowRight size={15} /></>}</button></article>;
+          const isClosed = item.isOpen === false;
+          return <article className="service-preview" key={item.id}><span className="service-category">{item.category}</span><h3>{item.name}</h3><p><MapPin size={14} />{item.location}</p><span className="service-wait"><Clock3 size={14} />{item.waiting} {item.waiting === 1 ? 'person' : 'people'} waiting</span><button className={`service-preview-action ${alreadyJoined ? 'joined' : ''}`} onClick={() => !activeQueue && !isClosed && onJoin(item)} disabled={Boolean(activeQueue) || isClosed}>{alreadyJoined ? <><Check size={15} />In your queue</> : isClosed ? 'Closed' : activeQueue ? 'Leave current queue to join' : <>Join queue<ArrowRight size={15} /></>}</button></article>;
         })}
       </div>
     </>
@@ -128,10 +132,11 @@ function JoinQueuePage({ queue, onJoin, onLeave }) {
       {mockServices.map(service => {
         const activeQueue = queue?.status !== 'served' ? queue : null;
         const alreadyJoined = activeQueue?.serviceId === service.id;
+        const isClosed = service.isOpen === false;
         return (
           <article className="service-card" key={service.id}>
             <div className="service-card-main"><span className="service-category">{service.category}</span><h2>{service.name}</h2><p><MapPin size={15} />{service.location}</p><div className="service-meta"><span><Users size={15} />{service.waiting} {service.waiting === 1 ? 'person' : 'people'} waiting</span><span><Clock3 size={15} />~{service.waiting * service.averageMinutes} min wait</span></div></div>
-            <div className="service-card-action"><span className="open-status"><span />Open until {service.openUntil}</span>{alreadyJoined ? <div className="queue-card-actions"><button className="primary-button" disabled><Check size={17} />In your queue</button><button className="text-button" onClick={onLeave}>Leave queue</button></div> : <button className="primary-button" onClick={() => onJoin(service)} disabled={Boolean(activeQueue)}>{activeQueue ? 'Leave current queue to join' : 'Join queue'}{!activeQueue && <ArrowRight size={17} />}</button>}</div>
+            <div className="service-card-action"><span className={`open-status ${isClosed ? 'closed' : ''}`}><span />{isClosed ? 'Closed for now' : `Open until ${service.openUntil}`}</span>{alreadyJoined ? <div className="queue-card-actions"><button className="primary-button" disabled><Check size={17} />In your queue</button><button className="text-button" onClick={onLeave}>Leave queue</button></div> : <button className="primary-button" onClick={() => !isClosed && onJoin(service)} disabled={Boolean(activeQueue) || isClosed}>{isClosed ? 'Closed' : activeQueue ? 'Leave current queue to join' : 'Join queue'}{!activeQueue && !isClosed && <ArrowRight size={17} />}</button>}</div>
           </article>
         );
       })}
@@ -168,6 +173,7 @@ function WorkspacePage({ session }) {
   const navigate = useNavigate();
   const [queue, setQueue] = useState(() => getActiveQueue());
   const [profile, setProfile] = useState(() => getUserProfile(session.email));
+  const [adminServices, setAdminServices] = useState(() => mockServices.map(service => ({ ...service })));
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
   const [joinMessage, setJoinMessage] = useState('');
   useEffect(() => saveActiveQueue(queue), [queue]);
@@ -175,6 +181,9 @@ function WorkspacePage({ session }) {
   useEffect(() => {
     if (location.pathname !== '/user/status') setJoinMessage('');
   }, [location.pathname]);
+  useEffect(() => {
+    mockServices.splice(0, mockServices.length, ...adminServices.map(service => ({ ...service })));
+  }, [adminServices]);
   const page = pageContent[location.pathname];
   if (!page || !location.pathname.startsWith(`/${session.role}/`)) return <Navigate to={`/${session.role}/dashboard`} replace />;
   const dashboard = location.pathname.endsWith('/dashboard');
@@ -205,6 +214,26 @@ function WorkspacePage({ session }) {
     navigate('/user/join');
   }
 
+  function saveAdminService(serviceData) {
+    setAdminServices(current => {
+      const existing = current.findIndex(item => item.id === serviceData.id);
+      if (existing >= 0) {
+        const next = [...current];
+        next[existing] = { ...serviceData };
+        return next;
+      }
+      return [...current, { ...serviceData }];
+    });
+  }
+
+  function toggleAdminService(serviceId) {
+    setAdminServices(current => current.map(service => service.id === serviceId ? { ...service, isOpen: service.isOpen === false } : service));
+  }
+
+  function deleteAdminService(serviceId) {
+    setAdminServices(current => current.filter(service => service.id !== serviceId));
+  }
+
   return (
     <AppShell session={session} profile={profile} title={page.title}>
       <div className="page-heading"><p className="eyebrow">{page.eyebrow}</p><h1>{userPage && dashboard ? `Good to see you, ${profile.displayName}` : page.heading}</h1><p>{page.description}</p></div>
@@ -213,13 +242,10 @@ function WorkspacePage({ session }) {
       {userPage && location.pathname === '/user/status' ? <QueueStatusPage queue={queue} onAdvance={advanceQueuePosition} onLeave={() => setLeaveConfirmOpen(true)} onStartAnother={startAnotherQueue} joinMessage={joinMessage} /> : null}
       {userPage && location.pathname === '/user/settings' ? <AccountSettings email={session.email} /> : null}
       {userPage && leaveConfirmOpen && <div className="confirm-overlay"><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="leave-confirm-title"><h2 id="leave-confirm-title">Leave this queue?</h2><p>Your current place will be removed from this demo queue. You can join another service afterward.</p><div><button type="button" className="text-button" onClick={() => setLeaveConfirmOpen(false)}>Keep my place</button><button type="button" className="primary-button confirm-leave-button" onClick={confirmLeaveQueue}>Leave queue</button></div></section></div>}
-      {!userPage && dashboard ? (
-        <div className="overview-grid">
-          <div className="overview-panel"><div className="panel-icon teal"><Users size={21} /></div><span>{session.role === 'admin' ? 'Active queues' : 'Your active queues'}</span><strong>0</strong><p>{session.role === 'admin' ? 'Queues will appear as services open.' : 'Join a service to get started.'}</p></div>
-          <div className="overview-panel"><div className="panel-icon coral"><Clock3 size={21} /></div><span>{session.role === 'admin' ? 'Services' : 'Estimated wait'}</span><strong>{session.role === 'admin' ? '0' : '--'}</strong><p>{session.role === 'admin' ? 'Manage services from the sidebar.' : 'Wait times appear after joining.'}</p></div>
-          <div className="overview-panel"><div className="panel-icon blue"><Info size={21} /></div><span>Notifications</span><strong>0</strong><p>Updates will show here.</p></div>
-        </div>
-      ) : (!dashboard && !userPage) ? (
+      {!userPage && dashboard ? <AdminDashboardPage services={adminServices} /> : null}
+      {!userPage && location.pathname === '/admin/services' ? <AdminServicesPage services={adminServices} onSaveService={saveAdminService} onToggleService={toggleAdminService} onDeleteService={deleteAdminService} /> : null}
+      {!userPage && location.pathname === '/admin/queues' ? <AdminQueuePage services={adminServices} onToggleService={toggleAdminService} /> : null}
+      {!userPage && !dashboard && location.pathname !== '/admin/services' && location.pathname !== '/admin/queues' ? (
         <div className="empty-state"><div className="empty-icon">{location.pathname.includes('services') ? <Plus size={26} /> : <Users size={26} />}</div><h2>{page.heading}</h2><p>{page.description}</p></div>
       ) : null}
     </AppShell>
