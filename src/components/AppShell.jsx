@@ -8,6 +8,7 @@ const userItems = [
   { path: '/user/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/user/join', label: 'Join a queue', icon: Users },
   { path: '/user/status', label: 'Queue status', icon: CalendarClock },
+  { path: '/user/settings', label: 'Account settings', icon: Settings2 },
   { path: '/user/history', label: 'History', icon: ClipboardList },
 ];
 
@@ -17,12 +18,13 @@ const adminItems = [
   { path: '/admin/queues', label: 'Manage queues', icon: Users },
 ];
 
-export default function AppShell({ session, children, title }) {
+export default function AppShell({ session, profile = session, children, title }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const navigate = useNavigate();
   const items = session.role === 'admin' ? adminItems : userItems;
-  const initials = session.email.slice(0, 1).toUpperCase();
+  const accountEmail = profile.email || session.email;
+  const initials = (profile.displayName || accountEmail).slice(0, 1).toUpperCase();
 
   function signOut() {
     clearSession();
@@ -50,7 +52,7 @@ export default function AppShell({ session, children, title }) {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="sidebar-profile"><span className="avatar">{initials}</span><span><strong>{session.email}</strong><small>{session.role === 'admin' ? 'Administrator' : 'Member'}</small></span></div>
+          <div className="sidebar-profile"><span className="avatar">{initials}</span><span><strong>{accountEmail}</strong><small>{session.role === 'admin' ? 'Administrator' : 'Member'}</small></span></div>
           <button className="nav-item signout" onClick={signOut}><LogOut size={19} strokeWidth={1.9} /><span>Sign out</span></button>
         </div>
       </aside>
