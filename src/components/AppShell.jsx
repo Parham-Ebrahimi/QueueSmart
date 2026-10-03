@@ -1,8 +1,66 @@
-import { useState } from 'react';
-import { Bell, CalendarClock, ClipboardList, LayoutDashboard, LogOut, Menu, Settings2, Users, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Bell, CalendarClock, CheckCircle2, ClipboardList, Info, LayoutDashboard, ListOrdered, LogOut, Menu, Settings2, Users, X } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import Brand from './Brand.jsx';
 import { clearSession } from '../auth.js';
+import { clearNotifications, markAllRead, markRead, useNotifications } from '../notifications.js';
+import { formatRelativeTime } from '../store.js';
+
+const typeIcons = { status: CheckCircle2, service: Info, queue: Users };
+
+function NotificationsMenu({ role }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  const { notifications, unreadCount } = useNotifications(role);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function handleClick(event) {
+      if (!wrapRef.current?.contains(event.target)) setOpen(false);
+    }
+    function handleKey(event) {
+      if (event.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="notifications-wrap" ref={wrapRef}>
+      <button className="icon-button notification-button" aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'} aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Bell size={20} />
+        {unreadCount > 0 && <span className="notification-dot" aria-hidden="true" />}
+      </button>
+      {open && (
+        <div className="notification-popover" role="dialog" aria-label="Notifications">
+          <div className="notification-popover-head">
+            <strong>Notifications{unreadCount > 0 && <span className="unread-count">{unreadCount}</span>}</strong>
+            {notifications.length > 0 && <div className="notification-popover-actions">{unreadCount > 0 && <button type="button" className="link-button" onClick={() => markAllRead(role)}>Mark all read</button>}<button type="button" className="link-button muted" onClick={() => clearNotifications(role)}>Clear</button></div>}
+          </div>
+          {notifications.length ? (
+            <ul className="notification-list">
+              {notifications.slice(0, 8).map(item => {
+                const Icon = typeIcons[item.type] || Users;
+                return (
+                  <li key={item.id} className={item.read ? '' : 'unread'}>
+                    <button type="button" onClick={() => markRead(item.id)}>
+                      <span className={`notification-type ${item.type}`}><Icon size={15} /></span>
+                      <div><strong>{item.title}</strong><p>{item.message}</p><small>{formatRelativeTime(item.createdAt)}</small></div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : <p className="notification-empty">You’re all caught up. Queue updates will appear here.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const userItems = [
   { path: '/user/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -15,12 +73,11 @@ const userItems = [
 const adminItems = [
   { path: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/admin/services', label: 'Services', icon: Settings2 },
-  { path: '/admin/queues', label: 'Manage queues', icon: Users },
+  { path: '/admin/queues', label: 'Manage queues', icon: ListOrdered },
 ];
 
 export default function AppShell({ session, profile = session, children, title }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const navigate = useNavigate();
   const items = session.role === 'admin' ? adminItems : userItems;
   const accountEmail = profile.email || session.email;
@@ -61,10 +118,7 @@ export default function AppShell({ session, profile = session, children, title }
           <div className="topbar-left"><button className="icon-button menu-button" aria-label="Open menu" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="topbar-title">{title}</span></div>
           <div className="topbar-actions">
             <span className="role-label">{session.role === 'admin' ? 'Admin view' : 'User view'}</span>
-            <div className="notifications-wrap">
-              <button className="icon-button notification-button" aria-label="Notifications" aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen(!notificationsOpen)}><Bell size={20} /></button>
-              {notificationsOpen && <div className="notification-popover"><strong>Notifications</strong><p>Queue updates will appear here.</p></div>}
-            </div>
+            <NotificationsMenu role={session.role} />
             <span className="avatar topbar-avatar">{initials}</span>
           </div>
         </header>
