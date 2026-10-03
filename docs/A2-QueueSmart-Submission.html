@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Assignment 2 — QueueSmart UI / UX Design and Front-End Implementation</title>
+  <style>
+    @page { size: letter; margin: 0.75in 0.7in 0.8in 0.7in; }
+    :root { color: #17343a; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Times New Roman", Times, serif;
+      font-size: 12pt;
+      line-height: 1.45;
+      color: #1a2a2d;
+    }
+    h1, h2, h3 { font-family: Arial, Helvetica, sans-serif; color: #123f42; page-break-after: avoid; }
+    h1 { font-size: 22pt; margin: 0 0 8pt; }
+    h2 { font-size: 15pt; margin: 22pt 0 8pt; border-bottom: 1.5pt solid #137c75; padding-bottom: 4pt; }
+    h3 { font-size: 12.5pt; margin: 16pt 0 6pt; color: #137c75; }
+    p { margin: 0 0 9pt; }
+    .cover {
+      border: 1.5pt solid #137c75;
+      padding: 22pt 24pt 18pt;
+      margin-bottom: 18pt;
+    }
+    .cover .course { color: #137c75; font-family: Arial, Helvetica, sans-serif; font-size: 10.5pt; font-weight: 700; letter-spacing: .4pt; text-transform: uppercase; margin: 0 0 8pt; }
+    .meta { margin: 0; color: #3d5559; }
+    .meta strong { color: #123f42; }
+    a { color: #0f6761; }
+    table { width: 100%; border-collapse: collapse; margin: 8pt 0 14pt; font-size: 11pt; page-break-inside: avoid; }
+    th, td { border: 0.75pt solid #b7c7c8; padding: 7pt 8pt; vertical-align: top; text-align: left; }
+    th { background: #e8f3f1; font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #123f42; }
+    ul { margin: 4pt 0 12pt 18pt; }
+    li { margin-bottom: 4pt; }
+    .figure { page-break-inside: avoid; margin: 10pt 0 18pt; }
+    .figure img { width: 100%; height: auto; border: 0.75pt solid #d5e0e0; }
+    .caption { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #3d5559; margin: 5pt 0 0; }
+    .caption strong { color: #123f42; }
+    .note { font-size: 10.5pt; color: #3d5559; }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <p class="course">Assignment 2 · UI / UX Design and Front-End Implementation</p>
+    <h1>QueueSmart — Smart Queue Management Application</h1>
+    <p class="meta"><strong>Team:</strong> Parham Ebrahimi, Mustafa Ahmed, Kevin Santhosh, Andrew Andari</p>
+    <p class="meta"><strong>Application:</strong> QueueSmart (front-end only; mock data)</p>
+    <p class="meta"><strong>Date:</strong> October 3, 2026</p>
+  </section>
+
+  <h2>1. GitHub Repository Link</h2>
+  <p>The front-end is maintained at:</p>
+  <p><a href="https://github.com/Parham-Ebrahimi/QueueSmart">https://github.com/Parham-Ebrahimi/QueueSmart</a></p>
+  <p>TAs can validate individual contributions from the commit history on <code>main</code>. Authorship is visible on each commit (Parham-Ebrahimi, Mustafa Ahmed / TheRealMufasa, kevinsorts, wynetyme).</p>
+
+  <h2>2. Design and Development Methodology</h2>
+  <p>Our methodology has <strong>not changed</strong> since Assignment 1. We still work in a short, screen-first cycle:</p>
+  <ul>
+    <li>Agree on the information architecture and visual system from A1 (teal workspace, sidebar navigation, card-based status).</li>
+    <li>Split the required screens among four people so each person owns a coherent slice of the product.</li>
+    <li>Implement the front end with mock data, then review navigation, validation, and visual consistency together.</li>
+  </ul>
+  <p>We did not switch process because A2 is the implementation of the A1 design, not a new problem. The only adjustment was practical: later screens (History, Notifications, Queue Management) consume the same mock services as the earlier dashboards, so we added a shared <code>localStorage</code> layer instead of each person inventing a separate fake data set. That keeps the UI consistent for Assignments 3 and 4.</p>
+  <p>Work was divided by role and screen, not by “whoever is free”:</p>
+  <ul>
+    <li><strong>Person 1 — Authentication / UI foundation:</strong> login, registration, validation, navigation, shared CSS and components.</li>
+    <li><strong>Person 2 — User interface:</strong> user dashboard, join queue, queue status, mock queue interactions.</li>
+    <li><strong>Person 3 — Admin services:</strong> admin dashboard, service management, create/edit form, open/close queue.</li>
+    <li><strong>Person 4 — Queue administration:</strong> queue management (reorder / remove / serve next), history, notifications, and closing remaining A2 form-spec gaps.</li>
+  </ul>
+  <p>Everyone was responsible for regular GitHub commits, checking navigation between pages, keeping styling consistent, capturing screenshots of their screens, writing contribution notes, and reviewing this document.</p>
+
+  <h2>3. Front-End Technologies and Responsibilities</h2>
+  <p>QueueSmart is a single-page web app. We chose a small, conventional front-end stack so the A1 layout could be implemented quickly and reused in later assignments.</p>
+  <table>
+    <thead>
+      <tr><th>Technology</th><th>Why we used it</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>React 19</td>
+        <td>Component-based screens that map one-to-one to the A1 design. Client-side state is enough for mock queues, history, and notifications. No backend is required for A2.</td>
+      </tr>
+      <tr>
+        <td>Vite 6</td>
+        <td>Fast local development and a one-command production build (<code>npm run dev</code> / <code>npm run build</code>).</td>
+      </tr>
+      <tr>
+        <td>React Router 7</td>
+        <td>Real routes for login, registration, user pages, and admin pages. Role-aware navigation is part of the UX, not a single page of tabs.</td>
+      </tr>
+      <tr>
+        <td>lucide-react</td>
+        <td>A consistent icon set that matches the teal / coral A1 palette without pulling in a full UI kit.</td>
+      </tr>
+      <tr>
+        <td>Plain CSS</td>
+        <td>We kept the A1 look (DM Sans + Manrope, 7–8px radii, teal <code>#137c75</code>) by writing CSS directly instead of fighting a component library.</td>
+      </tr>
+      <tr>
+        <td>Browser localStorage</td>
+        <td>Mock persistence for the session, services, active queue, history, and notifications. Acceptable for A2; replaceable with APIs in A3.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>How to run the front end:</p>
+  <p><code>npm install</code> then <code>npm run dev</code>, and open <code>http://127.0.0.1:5173</code>. Register or sign in with any valid email and a password of at least 8 characters. Choose User or Administrator before submitting — the two roles have different workspaces.</p>
+
+  <h3>Who worked on which screens</h3>
+  <table>
+    <thead>
+      <tr><th>Group member</th><th>GitHub</th><th>Screens / features</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Parham Ebrahimi</td>
+        <td>Parham-Ebrahimi</td>
+        <td>Login, Registration, client-side auth validation, sidebar / top bar, shared components (<code>Brand</code>, <code>FormField</code>, <code>AppShell</code>) and base CSS.</td>
+      </tr>
+      <tr>
+        <td>Mustafa Ahmed</td>
+        <td>TheRealMufasa</td>
+        <td>User Dashboard, Join Queue, Queue Status, mock join / leave / simulate-next interactions, Account Settings.</td>
+      </tr>
+      <tr>
+        <td>Kevin Santhosh</td>
+        <td>kevinsorts</td>
+        <td>Admin Dashboard, Service Management (create / edit / delete), open / close queue controls, initial service-form validation.</td>
+      </tr>
+      <tr>
+        <td>Andrew Andari</td>
+        <td>wynetyme</td>
+        <td>Queue Management (reorder, remove, serve next), History, in-app Notifications, service-form spec fields (description, priority, 100-character name, expected duration), shared persisted mock data.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>4. Screenshots of the Front End</h2>
+  <p>Each required screen is labeled below. Additional validation, History, and Notifications captures are included because the assignment also requires those features.</p>
+
+  <div class="figure">
+    <img src="screenshots/01-login.png" alt="Login screen" />
+    <p class="caption"><strong>Figure 1. Login.</strong> Email (used as username), password, User / Administrator role picker, and a sign-in action. Empty required fields show client-side errors (see Figure 1b).</p>
+  </div>
+  <div class="figure">
+    <img src="screenshots/01b-login-validation.png" alt="Login validation" />
+    <p class="caption"><strong>Figure 1b. Login validation.</strong> Required email and password, email format, and an 8–128 character password rule.</p>
+  </div>
+  <div class="figure">
+    <img src="screenshots/02-register.png" alt="Registration screen" />
+    <p class="caption"><strong>Figure 2. Registration.</strong> Email, password, confirm password, and role selection. New accounts can continue as a user or an administrator.</p>
+  </div>
+  <div class="figure">
+    <img src="screenshots/02b-register-validation.png" alt="Registration validation" />
+    <p class="caption"><strong>Figure 2b. Registration validation.</strong> Required fields, email type, password length, and a matching confirm-password check.</p>
+  </div>
+  <div class="figure">
+    <img src="screenshots/03-user-dashboard.png" alt="User Dashboard" />
+    <p class="caption"><strong>Figure 3. User Dashboard.</strong> Overview of open services and people waiting, current queue (or an empty state), popular / active services, and a notifications summary.</p>
+  </div>
+  <div class="figure">
+    <img src="screenshots/04-join-queue.png" alt="Join Queue screen" />
+    <p class="caption"><strong>Figure 4. Join Queue.</strong> Select a service, see estimated wait time, and join or leave. Closed services cannot be joined. Only one active queue is allowed at a time.</p>
+  </div>
+  <div class="figure">
+    <img src="screenshots/05-queue-status.png" alt="Queue Status waiting" />
+    <p class="caption"><strong>Figure 5. Queue Status.</strong> Current position, estimated wait, people ahead, ticket number, and status updates (Waiting, Almost Ready, Served). “Simulate next update” previews movement through the mock line.</p>
+  </div>
+  <div class="figure">
+    <img src="screenshots/05b-queue-status-almost-ready.png" alt="Queue Status almost ready" />
+    <p class="caption"><strong>Figure 5b. Queue Status — Almost Ready.</strong> Status badge, progress, and timeline when the visitor is near the front of the line.</p>
+  </div>
+  <div class="figure">
+    <img src="screenshots/06-history.png" alt="History screen" />
+    <p class="caption"><strong>Figure 6. History.</strong> Past queues with date, service name, time in line, and outcome (Served, Left queue, Removed). Filter chips and summary stats are included.</p>
+  </div>
+  <div class="figure">
+    <img src="screenshots/07-admin-dashboard.png" alt="Admin Dashboard" />
+    <p class="caption"><strong>Figure 7. Admin Dashboard.</strong> List of services, current queue lengths, and quick actions to open or close a queue. Recent activity notifications appear on the same page.</p>
+  </div>
+  <div class="figure">
+    <img src="screenshots/08-service-management.png" alt="Service Management" />
+    <p class="caption"><strong>Figure 8. Service Management.</strong> Admins can create, edit, open/close, or delete services. Priority and expected duration are shown on each row.</p>
+  </div>
+  <div class="figure">
+    <img src="screenshots/08b-create-service-form.png" alt="Create service form" />
+    <p class="caption"><strong>Figure 8b. Create / Edit Service form.</strong> Service Name (required, max 100 characters), Description (required), Expected Duration in minutes (required), Priority (low / medium / high), category, location, and closing time.</p>
+  </div>
+  <div class="figure">
+    <img src="screenshots/08c-service-form-validation.png" alt="Service form validation" />
+    <p class="caption"><strong>Figure 8c. Service form validation.</strong> Required fields, length limits, numeric duration, and a time input for “Open until.”</p>
+  </div>
+  <div class="figure">
+    <img src="screenshots/10-queue-management.png" alt="Queue Management" />
+    <p class="caption"><strong>Figure 9. Queue Management.</strong> View the queue for a selected service. Reorder visitors, remove a visitor (UI only, with confirmation), and serve the next user. Recently served visits are listed under the line.</p>
+  </div>
+  <div class="figure">
+    <img src="screenshots/10b-queue-management-health-clinic.png" alt="Queue Management Health Clinic" />
+    <p class="caption"><strong>Figure 9b. Queue Management — selected service.</strong> Health Clinic line with live counts, move up / down, remove, and serve next.</p>
+  </div>
+  <div class="figure">
+    <img src="screenshots/09-notifications-user.png" alt="User notifications" />
+    <p class="caption"><strong>Figure 10. Notifications (in-app).</strong> Queue updates and status changes appear in the top-bar notification center (unread badge, mark read / mark all read / clear). The user dashboard also shows a notifications summary.</p>
+  </div>
+
+  <h2>5. Team Contribution Table</h2>
+  <p class="note">TAs can confirm the rows below against GitHub commit history on <a href="https://github.com/Parham-Ebrahimi/QueueSmart">github.com/Parham-Ebrahimi/QueueSmart</a>.</p>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:22%">Group member name</th>
+        <th style="width:43%">What is your contribution?</th>
+        <th>Discussion notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Parham Ebrahimi</td>
+        <td>Authentication screens (login and registration), email/password validation, shared navigation and sidebar, base layout and CSS, shared <code>Brand</code> and <code>FormField</code> components.</td>
+        <td>Owned the UI foundation so later screens could reuse one visual system. Established the User vs Administrator workspace split.</td>
+      </tr>
+      <tr>
+        <td>Mustafa Ahmed</td>
+        <td>User Dashboard, Join Queue, Queue Status, mock queue join/leave/simulate-next, account settings, and the first mock service data.</td>
+        <td>Implemented the member journey from “not in a queue” through waiting, almost ready, and served. Kept wait-time copy consistent with the A1 design.</td>
+      </tr>
+      <tr>
+        <td>Kevin Santhosh</td>
+        <td>Admin Dashboard, Service Management (create / edit / delete), open and close queue controls, and the first pass of service-form validation.</td>
+        <td>Built the administrator catalog so services exist for both dashboards. Open/close is available from the dashboard and the service list.</td>
+      </tr>
+      <tr>
+        <td>Andrew Andari</td>
+        <td>Queue Management (service selector, reorder, remove, serve-next simulation, recently served), History screen, in-app notifications (top bar + dashboard summary), service-form spec alignment (description, priority, 100-character name, expected duration), and the shared persisted mock-data layer. Labeled screenshots and this submission document.</td>
+        <td>Finished the remaining A2 screens and connected user and admin views so joining a queue, serving the next visitor, and history/notifications all use one mock source of truth. Commits authored as wynetyme.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Appendix — Assignment scope checklist</h2>
+  <table>
+    <thead>
+      <tr><th>Required item</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Login and registration, email as username, password, client-side validation</td><td>Complete</td></tr>
+      <tr><td>User Dashboard (queue overview, active services, notifications summary)</td><td>Complete</td></tr>
+      <tr><td>Join Queue (select service, estimated wait, join / leave)</td><td>Complete</td></tr>
+      <tr><td>Queue Status (position, wait, Waiting / Almost Ready / Served)</td><td>Complete</td></tr>
+      <tr><td>History (date, service, outcome)</td><td>Complete</td></tr>
+      <tr><td>Admin Dashboard (services, queue lengths, open/close)</td><td>Complete</td></tr>
+      <tr><td>Service Management (name, description, expected duration, priority)</td><td>Complete</td></tr>
+      <tr><td>Queue Management (view line, reorder / remove, serve next)</td><td>Complete</td></tr>
+      <tr><td>In-app notifications for queue updates and status changes</td><td>Complete</td></tr>
+      <tr><td>Client-side validations (required, length, email, numbers, time)</td><td>Complete</td></tr>
+      <tr><td>This PDF / Word document for Canvas (code stays on GitHub only)</td><td>This file</td></tr>
+    </tbody>
+  </table>
+  <p>Backend functionality is intentionally not implemented. Mock data is stored in the browser and is acceptable for Assignment 2. The same UI is intended for reuse in Assignment 3 (API integration) and Assignment 4 (data design).</p>
+</body>
+</html>

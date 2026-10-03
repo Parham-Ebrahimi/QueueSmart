@@ -53,6 +53,15 @@ The methodology from Assignment 1 did not change: we still designed screens firs
 
 Person 4 owned the leftover A2 screens (Queue Management, History, Notifications) and the remaining form-spec gaps on Service Management. The teammates’ screens were kept and refined so user and admin views share one mock source of truth. Regular commits were authored as `wynetyme`.
 
+## Canvas submission document
+
+Upload **only** this document to Canvas (do not upload the code):
+
+- [docs/A2-QueueSmart-Submission.pdf](docs/A2-QueueSmart-Submission.pdf)
+- [docs/A2-QueueSmart-Submission.docx](docs/A2-QueueSmart-Submission.docx) (same content)
+
+It includes the GitHub link, methodology, technologies and responsibilities, labeled screenshots, and the team contribution table.
+
 ## Required screens
 
 Labeled screenshots for the PDF live in [`docs/screenshots/`](docs/screenshots).
