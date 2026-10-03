@@ -99,7 +99,8 @@
 .admin-service-actions .text-button{gap:5px}
 
 /* Queue management screen. */
-.service-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+.queue-picker{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.service-tabs{display:flex;flex-wrap:wrap;gap:8px}
 .service-tab{display:inline-flex;align-items:center;gap:9px;min-height:40px;padding:0 13px 0 12px;border:1px solid #dde6e6;border-radius:999px;background:#fff;color:#51686c;font-size:13px;font-weight:700;transition:border-color .15s,background .15s}
 .service-tab:hover{border-color:#9fc4c0}
 .service-tab.selected{border-color:#137c75;background:#137c75;color:#fff}

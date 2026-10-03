@@ -220,6 +220,9 @@ function WorkspacePage({ session }) {
   useEffect(() => {
     if (location.pathname !== '/user/status') setJoinMessage('');
   }, [location.pathname]);
+  useEffect(() => {
+    if (queue && (queue.status === 'served' || queue.status === 'removed')) setJoinMessage('');
+  }, [queue?.status]);
 
   // Record the outcome once when a queue entry finishes, and notify on position changes.
   useEffect(() => {

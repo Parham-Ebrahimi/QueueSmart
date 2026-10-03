@@ -33,22 +33,17 @@ export default function AdminQueuePage({ services, onToggleService, onServeNext,
 
   return (
     <>
-      <div className="admin-toolbar">
-        <div>
-          <p className="eyebrow">LIVE</p>
-          <h2>Queue management</h2>
+      <div className="queue-picker">
+        <div className="service-tabs" role="tablist" aria-label="Select a service">
+          {services.map(item => (
+            <button key={item.id} type="button" role="tab" aria-selected={item.id === selectedId} className={`service-tab ${item.id === selectedId ? 'selected' : ''}`} onClick={() => setSelectedId(item.id)}>
+              <span className={`tab-dot ${item.isOpen ? 'open' : 'closed'}`} />
+              <span className="tab-name">{item.name}</span>
+              <span className="tab-count">{waitingCount(item)}</span>
+            </button>
+          ))}
         </div>
         <span className="toolbar-stat"><Users size={15} />{totalWaiting} waiting across {services.length} {services.length === 1 ? 'service' : 'services'}</span>
-      </div>
-
-      <div className="service-tabs" role="tablist" aria-label="Select a service">
-        {services.map(item => (
-          <button key={item.id} type="button" role="tab" aria-selected={item.id === selectedId} className={`service-tab ${item.id === selectedId ? 'selected' : ''}`} onClick={() => setSelectedId(item.id)}>
-            <span className={`tab-dot ${item.isOpen ? 'open' : 'closed'}`} />
-            <span className="tab-name">{item.name}</span>
-            <span className="tab-count">{waitingCount(item)}</span>
-          </button>
-        ))}
       </div>
 
       {service && (
