@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, Bell, Check, CheckCircle2, Clock3, Eye, EyeOff, Info, MapPin, RefreshCw, Timer, Users } from 'lucide-react';
+import { AlertCircle, ArrowRight, Bell, Check, CheckCircle2, Clock3, Eye, EyeOff, Info, MapPin, RefreshCw, Timer, Users } from 'lucide-react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import AdminDashboardPage from './components/AdminDashboard.jsx';
 import AdminQueuePage from './components/AdminQueue.jsx';
@@ -9,6 +9,7 @@ import AccountSettings from './components/AccountSettings.jsx';
 import Brand from './components/Brand.jsx';
 import FormField from './components/FormField.jsx';
 import HistoryPage from './components/History.jsx';
+import { loginAccount, registerAccount } from './api.js';
 import { getSession, saveSession, validateAuth } from './auth.js';
 import { addHistoryEntry } from './history.js';
 import { addNotification, markAllRead, useNotifications } from './notifications.js';
@@ -21,22 +22,42 @@ function AuthPage({ isRegister }) {
   const [values, setValues] = useState({ email: '', password: '', confirmPassword: '', role: 'user' });
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const session = getSession();
   if (session) return <Navigate to={`/${session.role}/dashboard`} replace />;
 
   function change(event) {
     const { name, value } = event.target;
     setValues(current => ({ ...current, [name]: value }));
+    setFormError('');
     if (errors[name]) setErrors(current => ({ ...current, [name]: undefined }));
   }
 
-  function submit(event) {
+  function chooseRole(role) {
+    setValues(current => ({ ...current, role }));
+    setFormError('');
+  }
+
+  async function submit(event) {
     event.preventDefault();
+    if (submitting) return;
     const nextErrors = validateAuth(values, isRegister);
     setErrors(nextErrors);
+    setFormError('');
     if (Object.keys(nextErrors).length) return;
-    saveSession(values.email.trim().toLowerCase(), values.role);
-    navigate(`/${values.role}/dashboard`, { replace: true });
+
+    setSubmitting(true);
+    try {
+      const saved = saveSession(await (isRegister ? registerAccount(values) : loginAccount(values)));
+      navigate(`/${saved.role}/dashboard`, { replace: true });
+    } catch (error) {
+      // Field errors from the server show under their inputs; anything else shows above the form.
+      const { role: roleError, ...fieldErrors } = error.details || {};
+      setErrors(fieldErrors);
+      if (roleError || !Object.keys(fieldErrors).length) setFormError(roleError || error.message);
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -49,10 +70,11 @@ function AuthPage({ isRegister }) {
             <h1 className={isRegister ? '' : 'auth-title-only'}>{isRegister ? 'Create your account' : 'Sign in to QueueSmart'}</h1>
             {isRegister && <p className="auth-subtitle">A simpler way to keep your place in line.</p>}
             <form onSubmit={submit} noValidate>
+              {formError && <div className="auth-alert" role="alert"><AlertCircle size={17} />{formError}</div>}
               <div className="role-picker-label">Continue as</div>
               <div className="role-picker" role="group" aria-label="Account type">
-                <button type="button" className={values.role === 'user' ? 'selected' : ''} onClick={() => setValues(current => ({ ...current, role: 'user' }))}>User</button>
-                <button type="button" className={values.role === 'admin' ? 'selected' : ''} onClick={() => setValues(current => ({ ...current, role: 'admin' }))}>Administrator</button>
+                <button type="button" className={values.role === 'user' ? 'selected' : ''} onClick={() => chooseRole('user')}>User</button>
+                <button type="button" className={values.role === 'admin' ? 'selected' : ''} onClick={() => chooseRole('admin')}>Administrator</button>
               </div>
               <FormField label="Email address" id="email" name="email" type="email" placeholder="you@example.com" autoComplete="email" maxLength={254} value={values.email} onChange={change} error={errors.email} required />
               <div className="password-field">
@@ -60,7 +82,7 @@ function AuthPage({ isRegister }) {
                 <button type="button" className="password-toggle" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button>
               </div>
               {isRegister && <FormField label="Confirm password" id="confirmPassword" name="confirmPassword" type="password" placeholder="Re-enter your password" autoComplete="new-password" maxLength={128} value={values.confirmPassword} onChange={change} error={errors.confirmPassword} required />}
-              <button type="submit" className="primary-button auth-submit">{isRegister ? 'Create account' : 'Sign in'}<ArrowRight size={18} /></button>
+              <button type="submit" className="primary-button auth-submit" disabled={submitting}>{submitting ? (isRegister ? 'Creating account…' : 'Signing in…') : <>{isRegister ? 'Create account' : 'Sign in'}<ArrowRight size={18} /></>}</button>
             </form>
             <p className="auth-switch">{isRegister ? 'Already have an account?' : 'New to QueueSmart?'} <Link to={isRegister ? '/login' : '/register'}>{isRegister ? 'Sign in' : 'Create an account'}</Link></p>
           </div>
