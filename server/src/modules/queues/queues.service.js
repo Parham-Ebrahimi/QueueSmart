@@ -2,6 +2,7 @@ import { addHistoryEntry, listHistoryForUser } from '../../data/historyStore.js'
 import { createEntry, findEntryById, listEntries, listWaitingEntries, setWaitingOrder, updateEntry } from '../../data/queueStore.js';
 import { findServiceById, listServices } from '../../data/serviceStore.js';
 import ApiError from '../../utils/ApiError.js';
+import { notifyAdminsOfJoin, notifyApproachingFront, notifyJoined, notifyOutcome } from '../notifications/notifications.service.js';
 
 const priorityRank = { normal: 0, high: 1 };
 const RECENTLY_SERVED_LIMIT = 6;
@@ -51,7 +52,10 @@ function finishEntry(entry, service, outcome) {
     outcome,
     position: entry.initialPosition,
   });
-  return withPosition(finished, service, 0);
+  const positioned = withPosition(finished, service, 0);
+  notifyOutcome(positioned, service, outcome);
+  notifyApproachingFront(positionedQueue(service), service);
+  return positioned;
 }
 
 function requireWaitingEntry(service, entryId) {
@@ -82,7 +86,11 @@ export function joinQueue(serviceId, user, { name, priority }) {
   const ids = waiting.map(item => item.id);
   ids.splice(index, 0, entry.id);
   setWaitingOrder(serviceId, ids);
-  return withPosition(entry, service, index + 1);
+  const positioned = withPosition(entry, service, index + 1);
+  notifyJoined(user, positioned, service);
+  notifyAdminsOfJoin(positioned, service);
+  notifyApproachingFront(positionedQueue(service), service);
+  return positioned;
 }
 
 export function leaveQueue(serviceId, user) {
@@ -116,7 +124,9 @@ export function moveEntry(serviceId, entryId, direction) {
   }
   [ids[index], ids[target]] = [ids[target], ids[index]];
   setWaitingOrder(serviceId, ids);
-  return positionedQueue(service);
+  const queue = positionedQueue(service);
+  notifyApproachingFront(queue, service);
+  return queue;
 }
 
 // Called when a service is deleted so nobody is left waiting in a queue that no longer exists.

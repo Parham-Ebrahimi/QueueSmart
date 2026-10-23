@@ -11,7 +11,7 @@ import FormField from './components/FormField.jsx';
 import HistoryPage from './components/History.jsx';
 import { createService as createServiceApi, deleteService as deleteServiceApi, getQueueEntry, joinQueue as joinQueueApi, leaveQueue as leaveQueueApi, listQueues, listServices as listServicesApi, loginAccount, moveQueueEntry, registerAccount, removeQueueEntry, serveNextInQueue, updateService as updateServiceApi } from './api.js';
 import { getSession, saveSession, validateAuth } from './auth.js';
-import { addNotification, markAllRead, useNotifications } from './notifications.js';
+import { addNotification, markAllRead, syncNotifications, useNotifications } from './notifications.js';
 import { applyQueueViews, createServiceId, findService, getActiveQueue, loadServices, queueWaitMinutes, resolveQueue, saveActiveQueue, saveServices, waitingCount } from './queueData.js';
 import { formatClock, formatRelativeTime } from './store.js';
 import { getUserProfile, subscribeToProfileUpdates } from './userProfile.js';
@@ -241,7 +241,7 @@ function WorkspacePage({ session }) {
   const [profile, setProfile] = useState(() => getUserProfile(session.email));
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
   const [joinMessage, setJoinMessage] = useState('');
-  const { notifications, unreadCount } = useNotifications(session.role);
+  const { notifications, unreadCount } = useNotifications(session);
   const queue = resolveQueue(services, activeQueue, activeEntry);
   const previousPosition = useRef(queue?.position ?? null);
   const serviceSyncRequest = useRef(null);
@@ -272,6 +272,7 @@ function WorkspacePage({ session }) {
   async function refreshQueues() {
     const generation = queueGeneration.current;
     const views = await listQueues(session.token);
+    syncNotifications(session).catch(() => {});
     mergeQueueViews(views);
     if (session.role !== 'user' || generation !== queueGeneration.current) return;
 
@@ -347,18 +348,13 @@ function WorkspacePage({ session }) {
     if (queue && (queue.status === 'served' || queue.status === 'removed')) setJoinMessage('');
   }, [queue?.status]);
 
-  // Notify once when a queue entry finishes (the server records it in history), and on position changes.
+  // Join / approaching-front / served notices come from the notifications API.
+  // Keep the local queue ticket in sync so the status screen can stop polling a finished visit.
   useEffect(() => {
     if (!queue || session.role !== 'user') return;
-    const before = previousPosition.current;
     previousPosition.current = queue.position;
     if ((queue.status === 'served' || queue.status === 'removed') && !activeQueue.outcomeRecorded) {
-      addNotification({ audience: 'user', type: 'status', title: queue.status === 'served' ? `You’ve been served at ${queue.service.name}` : `Removed from ${queue.service.name}`, message: queue.status === 'served' ? 'Thanks for visiting. This queue has been added to your history.' : 'An administrator removed you from this queue. You can join another service.' });
       setActiveQueue(current => (current ? { ...current, outcomeRecorded: true } : current));
-      return;
-    }
-    if (before !== null && before > queue.position && queue.position > 0) {
-      addNotification({ audience: 'user', type: queue.status === 'almost-ready' ? 'status' : 'queue', title: queue.position === 1 ? 'You’re next!' : queue.status === 'almost-ready' ? 'Almost your turn' : `You moved up to #${queue.position}`, message: queue.position === 1 ? `Please head to ${queue.service.location} now.` : `${queue.position - 1} ${queue.position - 1 === 1 ? 'person is' : 'people are'} ahead of you at ${queue.service.name}.` });
     }
   }, [queue?.position, queue?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -383,8 +379,7 @@ function WorkspacePage({ session }) {
     replaceActiveQueue({ serviceId: service.id, entryId: entry.id, initialPosition: entry.initialPosition, joinedAt: entry.joinedAt });
     refreshQueues().catch(() => {});
     setJoinMessage(`You’ve joined ${service.name} at position #${entry.position}. Estimated wait: about ${entry.estimatedWaitMinutes} min.`);
-    addNotification({ audience: 'user', type: 'queue', title: `Joined ${service.name}`, message: `You are #${entry.position} in line. Estimated wait is about ${entry.estimatedWaitMinutes} min.` });
-    addNotification({ audience: 'admin', type: 'queue', title: `New visitor at ${service.name}`, message: `${profile.displayName} joined the queue (position #${entry.position}).` });
+    syncNotifications(session).catch(() => {});
     navigate('/user/status');
   }
 
@@ -404,8 +399,7 @@ function WorkspacePage({ session }) {
           return;
         }
       }
-      addNotification({ audience: 'user', type: 'status', title: `Left ${queue.service.name}`, message: 'Your place in line was released. You can join another service any time.' });
-      addNotification({ audience: 'admin', type: 'queue', title: `Visitor left ${queue.service.name}`, message: `${profile.displayName} left the queue.` });
+      syncNotifications(session).catch(() => {});
     }
     queueGeneration.current += 1;
     previousPosition.current = null;
@@ -511,13 +505,13 @@ function WorkspacePage({ session }) {
             : 'Services could not be loaded from the server. Check that the backend is running, then reload this page.'}
         </div>
       )}
-      {userPage && dashboard ? <UserDashboard services={services} queue={queue} onJoin={joinQueue} notifications={notifications} unreadCount={unreadCount} onMarkAllRead={() => markAllRead('user')} /> : null}
+      {userPage && dashboard ? <UserDashboard services={services} queue={queue} onJoin={joinQueue} notifications={notifications} unreadCount={unreadCount} onMarkAllRead={() => markAllRead(session)} /> : null}
       {userPage && location.pathname === '/user/join' ? <JoinQueuePage services={services} queue={queue} onJoin={joinQueue} onLeave={() => setLeaveConfirmOpen(true)} /> : null}
       {userPage && location.pathname === '/user/status' ? <QueueStatusPage queue={queue} onRefresh={refreshQueueStatus} onLeave={() => setLeaveConfirmOpen(true)} onStartAnother={startAnotherQueue} joinMessage={joinMessage} /> : null}
       {userPage && location.pathname === '/user/history' ? <HistoryPage session={session} /> : null}
       {userPage && location.pathname === '/user/settings' ? <AccountSettings email={session.email} /> : null}
       {userPage && leaveConfirmOpen && <div className="confirm-overlay"><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="leave-confirm-title"><h2 id="leave-confirm-title">Leave this queue?</h2><p>Your current place in this queue will be released. You can join another service afterward.</p><div><button type="button" className="text-button" onClick={() => setLeaveConfirmOpen(false)}>Keep my place</button><button type="button" className="primary-button confirm-leave-button" onClick={confirmLeaveQueue}>Leave queue</button></div></section></div>}
-      {!userPage && dashboard ? <AdminDashboardPage services={services} onToggleService={toggleAdminService} notifications={notifications} unreadCount={unreadCount} onMarkAllRead={() => markAllRead('admin')} /> : null}
+      {!userPage && dashboard ? <AdminDashboardPage services={services} onToggleService={toggleAdminService} notifications={notifications} unreadCount={unreadCount} onMarkAllRead={() => markAllRead(session)} /> : null}
       {!userPage && location.pathname === '/admin/services' ? <AdminServicesPage services={services} onSaveService={saveAdminService} onToggleService={toggleAdminService} onDeleteService={deleteAdminService} apiError={serviceApiError} /> : null}
       {!userPage && location.pathname === '/admin/queues' ? <AdminQueuePage services={services} onToggleService={toggleAdminService} onServeNext={serveNextVisitor} onRemoveVisitor={removeQueueVisitor} onMoveVisitor={moveQueueVisitor} /> : null}
     </AppShell>
