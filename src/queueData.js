@@ -4,14 +4,6 @@ const servicesUpdatedEvent = 'queuesmart-services-updated';
 
 export const priorityLevels = ['low', 'medium', 'high'];
 
-function minutesAgo(minutes) {
-  return new Date(Date.now() - minutes * 60000).toISOString();
-}
-
-function visitor(id, name, email, minutes) {
-  return { id, name, email, joinedAt: minutesAgo(minutes) };
-}
-
 export const defaultServices = [
   {
     id: 'student-services',
@@ -23,14 +15,8 @@ export const defaultServices = [
     averageMinutes: 4,
     openUntil: '5:00 PM',
     isOpen: true,
-    queue: [
-      visitor('v-101', 'Avery Chen', 'avery.chen@example.edu', 14),
-      visitor('v-102', 'Jordan Patel', 'jordan.patel@example.edu', 9),
-      visitor('v-103', 'Sam Okafor', 'sam.okafor@example.edu', 3),
-    ],
-    served: [
-      { ...visitor('v-100', 'Riley Gomez', 'riley.gomez@example.edu', 25), servedAt: minutesAgo(16) },
-    ],
+    queue: [],
+    served: [],
   },
   {
     id: 'it-help-desk',
@@ -42,27 +28,7 @@ export const defaultServices = [
     averageMinutes: 6,
     openUntil: '6:00 PM',
     isOpen: true,
-    queue: [visitor('v-201', 'Morgan Lee', 'morgan.lee@example.edu', 5)],
-    served: [],
-  },
-  {
-    id: 'health-clinic',
-    name: 'Health Clinic',
-    description: 'Walk-in appointments, immunizations, and wellness check-ins.',
-    priority: 'high',
-    location: 'Wellness Building · Suite 20',
-    category: 'Health & wellness',
-    averageMinutes: 5,
-    openUntil: '4:30 PM',
-    isOpen: true,
-    queue: [
-      visitor('v-301', 'Taylor Brooks', 'taylor.brooks@example.edu', 31),
-      visitor('v-302', 'Casey Nguyen', 'casey.nguyen@example.edu', 24),
-      visitor('v-303', 'Jamie Rivera', 'jamie.rivera@example.edu', 19),
-      visitor('v-304', 'Drew Kim', 'drew.kim@example.edu', 12),
-      visitor('v-305', 'Quinn Alvarez', 'quinn.alvarez@example.edu', 8),
-      visitor('v-306', 'Reese Thompson', 'reese.thompson@example.edu', 2),
-    ],
+    queue: [],
     served: [],
   },
   {
@@ -128,8 +94,9 @@ export function findService(services, serviceId) {
   return services.find(service => service.id === serviceId) || null;
 }
 
+// Users only receive a count from the API (not other people's entries), so prefer it when present.
 export function waitingCount(service) {
-  return service?.queue?.length || 0;
+  return service?.waitingCount ?? service?.queue?.length ?? 0;
 }
 
 export function estimateWait(service, position) {
@@ -155,72 +122,40 @@ export function saveActiveQueue(queue) {
   else localStorage.removeItem(activeQueueKey);
 }
 
-function uniqueId(prefix) {
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-}
-
-function updateService(services, serviceId, updater) {
-  return services.map(service => (service.id === serviceId ? updater(service) : service));
-}
-
-export function joinService(services, serviceId, person) {
-  const entry = { id: uniqueId('v'), name: person.name, email: person.email, joinedAt: new Date().toISOString(), isMember: true };
-  const service = findService(services, serviceId);
-  const position = waitingCount(service) + 1;
-  const nextServices = updateService(services, serviceId, current => ({ ...current, queue: [...current.queue, entry] }));
-  const activeQueue = { serviceId, entryId: entry.id, initialPosition: position, joinedAt: entry.joinedAt };
-  return { services: nextServices, activeQueue, position };
-}
-
-export function leaveService(services, serviceId, entryId) {
-  return updateService(services, serviceId, current => ({ ...current, queue: current.queue.filter(item => item.id !== entryId) }));
-}
-
-export function serveNext(services, serviceId) {
-  const service = findService(services, serviceId);
-  if (!service || !service.queue.length) return { services, served: null };
-  const [head, ...rest] = service.queue;
-  const servedEntry = { ...head, servedAt: new Date().toISOString() };
-  const nextServices = updateService(services, serviceId, current => ({
-    ...current,
-    queue: rest,
-    served: [servedEntry, ...current.served].slice(0, 6),
-  }));
-  return { services: nextServices, served: servedEntry };
-}
-
-export function removeVisitor(services, serviceId, visitorId) {
-  const service = findService(services, serviceId);
-  const removed = service?.queue.find(item => item.id === visitorId) || null;
-  return { services: leaveService(services, serviceId, visitorId), removed };
-}
-
-export function moveVisitor(services, serviceId, visitorId, direction) {
-  return updateService(services, serviceId, current => {
-    const index = current.queue.findIndex(item => item.id === visitorId);
-    const target = index + direction;
-    if (index < 0 || target < 0 || target >= current.queue.length) return current;
-    const queue = [...current.queue];
-    [queue[index], queue[target]] = [queue[target], queue[index]];
-    return { ...current, queue };
-  });
-}
-
 export function statusForPosition(position) {
   return position <= 2 ? 'almost-ready' : 'waiting';
 }
 
-export function resolveQueue(services, activeQueue) {
+// Combines the locally remembered active queue with the latest entry from GET /api/queues/:id/entries/:entryId.
+export function resolveQueue(services, activeQueue, entry) {
   if (!activeQueue) return null;
   const service = findService(services, activeQueue.serviceId);
   if (!service) return null;
-  const index = service.queue.findIndex(item => item.id === activeQueue.entryId);
-  if (index >= 0) {
-    const position = index + 1;
-    return { ...activeQueue, service, position, status: statusForPosition(position), waitMinutes: estimateWait(service, position) };
+  const current = entry?.id === activeQueue.entryId ? entry : null;
+  if (current && current.status !== 'waiting') {
+    return { ...activeQueue, service, position: 0, status: current.status === 'served' ? 'served' : 'removed', waitMinutes: 0 };
   }
-  const served = service.served.some(item => item.id === activeQueue.entryId);
-  return { ...activeQueue, service, position: 0, status: served ? 'served' : 'removed', waitMinutes: 0 };
+  const position = current?.position || activeQueue.initialPosition;
+  const waitMinutes = current ? current.estimatedWaitMinutes : estimateWait(service, position);
+  return { ...activeQueue, service, position, status: statusForPosition(position), waitMinutes };
+}
+
+function toVisitor(entry) {
+  return { id: entry.id, name: entry.name, email: entry.email, priority: entry.priority, joinedAt: entry.joinedAt, isMember: true };
+}
+
+// Merges queue views from the API into the matching services. Services without a view are left as they are.
+export function applyQueueViews(services, views) {
+  return services.map(service => {
+    const view = views.find(item => item.serviceId === service.id);
+    if (!view) return service;
+    return {
+      ...service,
+      waitingCount: view.waitingCount,
+      queue: (view.entries || []).map(toVisitor),
+      served: (view.recentlyServed || []).map(entry => ({ ...toVisitor(entry), servedAt: entry.endedAt })),
+    };
+  });
 }
 
 export function createServiceId(name, services) {

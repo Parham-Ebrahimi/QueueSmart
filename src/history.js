@@ -1,4 +1,5 @@
-import { createId, createListStore } from './store.js';
+import { useEffect, useState } from 'react';
+import { getUserHistory } from './api.js';
 
 export const historyOutcomes = {
   served: { label: 'Served', description: 'You reached the front and were helped.' },
@@ -6,38 +7,18 @@ export const historyOutcomes = {
   removed: { label: 'Removed', description: 'An administrator removed you from the queue.' },
 };
 
-function daysAgo(days, hour, minute = 0) {
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  date.setHours(hour, minute, 0, 0);
-  return date.toISOString();
-}
+// Loads the signed-in user's participation history from GET /api/users/:userId/history.
+// The server records every visit when it ends, so this page only reads.
+export function useHistory(session) {
+  const [state, setState] = useState({ history: [], loading: true, error: '' });
 
-function seedHistory() {
-  return [
-    { id: 'h-seed-1', serviceId: 'it-help-desk', serviceName: 'IT Help Desk', joinedAt: daysAgo(1, 10, 5), endedAt: daysAgo(1, 10, 24), outcome: 'served', position: 3 },
-    { id: 'h-seed-2', serviceId: 'health-clinic', serviceName: 'Health Clinic', joinedAt: daysAgo(4, 14, 30), endedAt: daysAgo(4, 14, 41), outcome: 'left', position: 5 },
-    { id: 'h-seed-3', serviceId: 'student-services', serviceName: 'Student Services', joinedAt: daysAgo(9, 9, 15), endedAt: daysAgo(9, 9, 40), outcome: 'served', position: 4 },
-  ];
-}
+  useEffect(() => {
+    let cancelled = false;
+    getUserHistory(session.id, session.token)
+      .then(history => !cancelled && setState({ history, loading: false, error: '' }))
+      .catch(error => !cancelled && setState({ history: [], loading: false, error: error.message }));
+    return () => { cancelled = true; };
+  }, [session.id, session.token]);
 
-const stores = new Map();
-
-function storeFor(email) {
-  const key = (email || 'guest').toLowerCase();
-  if (!stores.has(key)) {
-    stores.set(key, createListStore(`queuesmart-history:${key}`, `queuesmart-history-updated:${key}`, seedHistory));
-  }
-  return stores.get(key);
-}
-
-export function addHistoryEntry(email, { serviceId, serviceName, joinedAt, outcome, position }) {
-  const store = storeFor(email);
-  const entry = { id: createId('h'), serviceId, serviceName, joinedAt, endedAt: new Date().toISOString(), outcome, position };
-  store.write([entry, ...store.read()]);
-  return entry;
-}
-
-export function useHistory(email) {
-  return storeFor(email).useItems();
+  return state;
 }

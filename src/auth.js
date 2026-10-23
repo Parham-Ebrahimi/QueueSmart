@@ -3,7 +3,7 @@ const sessionKey = 'queuesmart-session';
 export function getSession() {
   try {
     const value = JSON.parse(localStorage.getItem(sessionKey));
-    return value?.token && value.email && ['user', 'admin'].includes(value.role) ? value : null;
+    return value?.token && value.id && value.email && ['user', 'admin'].includes(value.role) ? value : null;
   } catch {
     return null;
   }

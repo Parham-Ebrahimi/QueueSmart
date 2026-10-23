@@ -80,7 +80,7 @@ export default function AdminQueuePage({ services, onToggleService, onServeNext,
                   <li key={visitor.id} className={`visitor-row ${position === 1 ? 'next-up' : ''}`}>
                     <span className="visitor-position">{position}</span>
                     <div className="visitor-copy">
-                      <strong>{visitor.name}{visitor.isMember && <span className="member-tag"><Smartphone size={11} />App</span>}{position === 1 && <span className="next-tag">Next up</span>}</strong>
+                      <strong>{visitor.name}{visitor.isMember && <span className="member-tag"><Smartphone size={11} />App</span>}{visitor.priority === 'high' && <span className="member-tag">Priority</span>}{position === 1 && <span className="next-tag">Next up</span>}</strong>
                       <small>{visitor.email}</small>
                       <small className="visitor-meta"><Clock3 size={12} />Joined {formatClock(visitor.joinedAt)} ({formatRelativeTime(visitor.joinedAt).toLowerCase()}) · est. {estimateWait(service, position)} min wait</small>
                     </div>
@@ -112,7 +112,7 @@ export default function AdminQueuePage({ services, onToggleService, onServeNext,
         <div className="confirm-overlay">
           <section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="remove-confirm-title">
             <h2 id="remove-confirm-title">Remove {confirmRemove.name}?</h2>
-            <p>They will lose their place in the {service?.name} queue. This is a UI-only simulation for the demo.</p>
+            <p>They will lose their place in the {service?.name} queue, and the visit is recorded as removed in their history.</p>
             <div>
               <button type="button" className="text-button" onClick={() => setConfirmRemove(null)}>Keep in queue</button>
               <button type="button" className="primary-button confirm-leave-button" onClick={() => { onRemoveVisitor(service.id, confirmRemove.id); setConfirmRemove(null); }}>Remove visitor</button>
