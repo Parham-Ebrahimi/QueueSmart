@@ -12,9 +12,10 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiRequest(path, { method = 'GET', body } = {}) {
+export async function apiRequest(path, { method = 'GET', body, token } = {}) {
   const headers = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   let response;
   try {
@@ -36,4 +37,35 @@ export function loginAccount({ email, password, role }) {
 
 export function registerAccount({ email, password, confirmPassword, role }) {
   return apiRequest('/auth/register', { method: 'POST', body: { email, password, confirmPassword, role } });
+}
+
+function toServicePayload(service) {
+  const { queue, served, averageMinutes, serverBacked, ...fields } = service;
+  return { ...fields, expectedDuration: service.expectedDuration ?? averageMinutes };
+}
+
+export async function listServices(token) {
+  return apiRequest('/services', { token });
+}
+
+export async function createService(service, token) {
+  const { service: created } = await apiRequest('/services', { method: 'POST', body: toServicePayload(service), token });
+  return created;
+}
+
+export async function updateService(id, service, token) {
+  const { service: updated } = await apiRequest(`/services/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: toServicePayload(service),
+    token,
+  });
+  return updated;
+}
+
+export async function deleteService(id, token) {
+  return apiRequest(`/services/${encodeURIComponent(id)}`, { method: 'DELETE', token });
+}
+
+export function getServiceWaitTime(id, position, token) {
+  return apiRequest(`/queues/${encodeURIComponent(id)}/wait-time?position=${encodeURIComponent(position)}`, { token });
 }

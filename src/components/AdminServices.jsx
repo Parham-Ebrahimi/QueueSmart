@@ -1,4 +1,4 @@
-import { ArrowRight, Clock3, ListOrdered, Pencil, Plus, Trash2, Users } from 'lucide-react';
+import { AlertCircle, ArrowRight, Clock3, ListOrdered, Pencil, Plus, Trash2, Users } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { priorityLevels, waitingCount } from '../queueData.js';
@@ -50,22 +50,41 @@ export function validateService(values) {
   return errors;
 }
 
-export default function AdminServicesPage({ services, onSaveService, onToggleService, onDeleteService }) {
+export default function AdminServicesPage({ services, onSaveService, onToggleService, onDeleteService, apiError = '' }) {
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [values, setValues] = useState(emptyServiceForm);
   const [errors, setErrors] = useState({});
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [savedMessage, setSavedMessage] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [isPending, setIsPending] = useState(false);
+
+  async function runAction(action) {
+    if (isPending) return false;
+    setActionError('');
+    setIsPending(true);
+    try {
+      await action();
+      return true;
+    } catch (error) {
+      setActionError(error.message || 'The service could not be saved. Try again.');
+      return false;
+    } finally {
+      setIsPending(false);
+    }
+  }
 
   function resetForm() {
     setValues(emptyServiceForm);
     setErrors({});
+    setActionError('');
     setEditingId(null);
     setFormOpen(false);
   }
 
   function openCreateForm() {
+    setActionError('');
     setEditingId(null);
     setValues(emptyServiceForm);
     setErrors({});
@@ -75,6 +94,7 @@ export default function AdminServicesPage({ services, onSaveService, onToggleSer
   }
 
   function openEditForm(service) {
+    setActionError('');
     setEditingId(service.id);
     setValues({
       name: service.name,
@@ -98,8 +118,10 @@ export default function AdminServicesPage({ services, onSaveService, onToggleSer
     if (errors[name]) setErrors(current => ({ ...current, [name]: undefined }));
   }
 
-  function submitForm(event) {
+  async function submitForm(event) {
     event.preventDefault();
+    if (isPending) return;
+    setActionError('');
     const nextErrors = validateService(values);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
@@ -115,7 +137,19 @@ export default function AdminServicesPage({ services, onSaveService, onToggleSer
       isOpen: values.isOpen !== false,
     };
 
-    onSaveService(normalized, editingId);
+    setIsPending(true);
+    try {
+      await onSaveService(normalized, editingId);
+    } catch (error) {
+      const fieldErrors = { ...(error.details || {}) };
+      if (fieldErrors.expectedDuration) fieldErrors.averageMinutes = fieldErrors.expectedDuration;
+      delete fieldErrors.expectedDuration;
+      setErrors(current => ({ ...current, ...fieldErrors }));
+      setActionError(error.message || 'The service could not be saved. Try again.');
+      return;
+    } finally {
+      setIsPending(false);
+    }
     setSavedMessage(editingId ? `${normalized.name} was updated.` : `${normalized.name} was created.`);
     resetForm();
   }
@@ -133,6 +167,7 @@ export default function AdminServicesPage({ services, onSaveService, onToggleSer
         <button type="button" className="primary-button" onClick={openCreateForm}><Plus size={16} />Create service</button>
       </div>
 
+      {(apiError || actionError) && <div className="auth-alert" role="alert"><AlertCircle size={17} />{actionError || apiError}</div>}
       {savedMessage && !formOpen && <div className="queue-success-message" role="status">{savedMessage}</div>}
 
       {formOpen && (
@@ -184,7 +219,7 @@ export default function AdminServicesPage({ services, onSaveService, onToggleSer
             </label>
             <div className="form-actions">
               <button type="button" className="text-button" onClick={resetForm}>Cancel</button>
-              <button type="submit" className="primary-button">{editingId ? 'Save changes' : 'Create service'}<ArrowRight size={16} /></button>
+              <button type="submit" className="primary-button" disabled={isPending}>{isPending ? 'Saving…' : editingId ? 'Save changes' : 'Create service'}{!isPending && <ArrowRight size={16} />}</button>
             </div>
           </form>
         </section>
@@ -212,8 +247,8 @@ export default function AdminServicesPage({ services, onSaveService, onToggleSer
                 <div className="admin-service-actions">
                   <Link className="text-button" to="/admin/queues"><ListOrdered size={15} />Queue</Link>
                   <button type="button" className="text-button" onClick={() => openEditForm(service)}><Pencil size={15} />Edit</button>
-                  <button type="button" className="secondary-button" onClick={() => onToggleService(service.id)}>{service.isOpen === false ? 'Open queue' : 'Close queue'}</button>
-                  <button type="button" className="danger-button" onClick={() => setConfirmDelete(service)}><Trash2 size={14} />Delete</button>
+                  <button type="button" className="secondary-button" disabled={isPending} onClick={() => runAction(() => onToggleService(service.id))}>{service.isOpen === false ? 'Open queue' : 'Close queue'}</button>
+                  <button type="button" className="danger-button" disabled={isPending} onClick={() => setConfirmDelete(service)}><Trash2 size={14} />Delete</button>
                 </div>
               </article>
             ))}
@@ -229,8 +264,11 @@ export default function AdminServicesPage({ services, onSaveService, onToggleSer
             <h2 id="delete-confirm-title">Delete {confirmDelete.name}?</h2>
             <p>{waitingCount(confirmDelete) ? `${waitingCount(confirmDelete)} ${waitingCount(confirmDelete) === 1 ? 'person is' : 'people are'} still waiting. ` : ''}This removes the service and its queue from the demo.</p>
             <div>
-              <button type="button" className="text-button" onClick={() => setConfirmDelete(null)}>Cancel</button>
-              <button type="button" className="primary-button confirm-leave-button" onClick={() => { onDeleteService(confirmDelete.id); setConfirmDelete(null); }}>Delete service</button>
+              <button type="button" className="text-button" disabled={isPending} onClick={() => setConfirmDelete(null)}>Cancel</button>
+              <button type="button" className="primary-button confirm-leave-button" disabled={isPending} onClick={async () => {
+                setActionError('');
+                if (await runAction(() => onDeleteService(confirmDelete.id))) setConfirmDelete(null);
+              }}>{isPending ? 'Deleting…' : 'Delete service'}</button>
             </div>
           </section>
         </div>

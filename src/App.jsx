@@ -9,7 +9,7 @@ import AccountSettings from './components/AccountSettings.jsx';
 import Brand from './components/Brand.jsx';
 import FormField from './components/FormField.jsx';
 import HistoryPage from './components/History.jsx';
-import { loginAccount, registerAccount } from './api.js';
+import { createService as createServiceApi, deleteService as deleteServiceApi, getServiceWaitTime, listServices as listServicesApi, loginAccount, registerAccount, updateService as updateServiceApi } from './api.js';
 import { getSession, saveSession, validateAuth } from './auth.js';
 import { addHistoryEntry } from './history.js';
 import { addNotification, markAllRead, useNotifications } from './notifications.js';
@@ -170,6 +170,9 @@ function UserDashboard({ services, queue, onJoin, notifications, unreadCount, on
 
 function JoinQueuePage({ services, queue, onJoin, onLeave }) {
   const active = queue && (queue.status === 'waiting' || queue.status === 'almost-ready') ? queue : null;
+  if (!services.length) {
+    return <div className="empty-state"><div className="empty-icon"><Users size={26} /></div><h2>No services available</h2><p>Services will appear here when an administrator adds them.</p></div>;
+  }
   return (
     <div className="service-list">
       {services.map(service => {
@@ -229,6 +232,7 @@ function WorkspacePage({ session }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [services, setServices] = useState(() => loadServices());
+  const [serviceApiError, setServiceApiError] = useState('');
   const [activeQueue, setActiveQueue] = useState(() => getActiveQueue());
   const [profile, setProfile] = useState(() => getUserProfile(session.email));
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
@@ -236,6 +240,44 @@ function WorkspacePage({ session }) {
   const { notifications, unreadCount } = useNotifications(session.role);
   const queue = resolveQueue(services, activeQueue);
   const previousPosition = useRef(queue?.position ?? null);
+  const serviceSyncRequest = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!serviceSyncRequest.current) {
+      serviceSyncRequest.current = (async () => {
+        const localServices = loadServices();
+        let remoteServices = (await listServicesApi(session.token)).services;
+        if (!remoteServices.length && session.role === 'admin') {
+          remoteServices = [];
+          for (const service of localServices) {
+            remoteServices.push(await createServiceApi(service, session.token));
+          }
+        }
+        return { localServices, remoteServices };
+      })();
+    }
+
+    serviceSyncRequest.current.then(({ localServices, remoteServices }) => {
+      if (cancelled) return;
+      const syncedServices = remoteServices.map(service => {
+        const local = findService(localServices, service.id);
+        return {
+          ...service,
+          averageMinutes: service.expectedDuration,
+          queue: local?.queue || [],
+          served: local?.served || [],
+          serverBacked: true,
+        };
+      });
+      setServices(syncedServices);
+      saveServices(syncedServices);
+      setServiceApiError('');
+    }).catch(error => {
+      if (!cancelled) setServiceApiError(error.message);
+    });
+    return () => { cancelled = true; };
+  }, [session.role, session.token]);
 
   useEffect(() => saveActiveQueue(activeQueue), [activeQueue]);
   useEffect(() => subscribeToProfileUpdates(() => setProfile(getUserProfile(session.email))), [session.email]);
@@ -272,13 +314,25 @@ function WorkspacePage({ session }) {
     saveServices(next);
   }
 
-  function joinQueue(service) {
+  async function joinQueue(service) {
+    const position = waitingCount(service) + 1;
+    let waitMinutes = estimateWait(service, position);
+    let estimateSource = service.serverBacked ? 'API estimate based on position and service duration, not live queue data' : 'local position-based estimate';
+    let estimateWarning = '';
+    if (service.serverBacked) {
+      try {
+        ({ estimatedWaitMinutes: waitMinutes } = await getServiceWaitTime(service.id, position, session.token));
+      } catch (error) {
+        estimateSource = 'local position-based estimate';
+        estimateWarning = ` The API estimate was unavailable (${error.message}); showing the local estimate.`;
+      }
+    }
     const result = joinService(services, service.id, { name: profile.displayName, email: profile.email || session.email });
     previousPosition.current = result.position;
     commitServices(result.services);
     setActiveQueue(result.activeQueue);
-    setJoinMessage(`You’ve joined ${service.name} at position #${result.position}.`);
-    addNotification({ audience: 'user', type: 'queue', title: `Joined ${service.name}`, message: `You are #${result.position} in line. Estimated wait is about ${estimateWait(service, result.position)} min.` });
+    setJoinMessage(`You’ve joined ${service.name} at position #${result.position}. Estimated wait: about ${waitMinutes} min (${estimateSource}).${estimateWarning}`);
+    addNotification({ audience: 'user', type: 'queue', title: `Joined ${service.name}`, message: `You are #${result.position} in line. Estimated wait is about ${waitMinutes} min.` });
     addNotification({ audience: 'admin', type: 'queue', title: `New visitor at ${service.name}`, message: `${profile.displayName} joined the queue (position #${result.position}).` });
     navigate('/user/status');
   }
@@ -309,30 +363,43 @@ function WorkspacePage({ session }) {
     navigate('/user/join');
   }
 
-  function saveAdminService(serviceData, editingId) {
+  async function saveAdminService(serviceData, editingId) {
     const existing = editingId ? findService(services, editingId) : null;
     if (existing) {
-      commitServices(services.map(item => (item.id === editingId ? { ...existing, ...serviceData } : item)));
+      const saved = await updateServiceApi(editingId, serviceData, session.token);
+      commitServices(services.map(item => (item.id === editingId ? {
+        ...existing,
+        ...saved,
+        averageMinutes: saved.expectedDuration,
+        serverBacked: true,
+      } : item)));
+      setServiceApiError('');
       addNotification({ audience: 'admin', type: 'service', title: `${serviceData.name} updated`, message: 'Service details were saved.' });
       return;
     }
-    const created = { ...serviceData, id: createServiceId(serviceData.name, services), queue: [], served: [] };
+    const saved = await createServiceApi({ ...serviceData, id: createServiceId(serviceData.name, services) }, session.token);
+    const created = { ...serviceData, ...saved, averageMinutes: saved.expectedDuration, serverBacked: true, queue: [], served: [] };
     commitServices([...services, created]);
+    setServiceApiError('');
     addNotification({ audience: 'admin', type: 'service', title: `${created.name} created`, message: `${created.isOpen ? 'The queue is open' : 'The queue is closed'} and the service is listed for members.` });
     if (created.isOpen) addNotification({ audience: 'user', type: 'service', title: `New service: ${created.name}`, message: `${created.name} is now accepting visitors at ${created.location}.` });
   }
 
-  function toggleAdminService(serviceId) {
+  async function toggleAdminService(serviceId) {
     const service = findService(services, serviceId);
     if (!service) return;
     const isOpen = !service.isOpen;
-    commitServices(services.map(item => (item.id === serviceId ? { ...item, isOpen } : item)));
+    const saved = await updateServiceApi(serviceId, { ...service, isOpen }, session.token);
+    commitServices(services.map(item => (item.id === serviceId ? { ...item, ...saved, averageMinutes: saved.expectedDuration, serverBacked: true } : item)));
+    setServiceApiError('');
     addNotification({ audience: 'all', type: 'service', title: `${service.name} is now ${isOpen ? 'open' : 'closed'}`, message: isOpen ? `${service.name} is accepting new visitors again.` : `${service.name} is no longer accepting new visitors. People already in line will still be served.` });
   }
 
-  function deleteAdminService(serviceId) {
+  async function deleteAdminService(serviceId) {
     const service = findService(services, serviceId);
+    await deleteServiceApi(serviceId, session.token);
     commitServices(services.filter(item => item.id !== serviceId));
+    setServiceApiError('');
     if (service) addNotification({ audience: 'admin', type: 'service', title: `${service.name} deleted`, message: 'The service and its queue were removed.' });
   }
 
@@ -359,6 +426,14 @@ function WorkspacePage({ session }) {
   return (
     <AppShell session={session} profile={profile} title={page.title}>
       <div className="page-heading"><p className="eyebrow">{page.eyebrow}</p><h1>{userPage && dashboard ? `Good to see you, ${profile.displayName}` : page.heading}</h1><p>{page.description}</p></div>
+      {userPage && location.pathname === '/user/join' && serviceApiError && (
+        <div className="auth-alert" role="alert">
+          <AlertCircle size={17} />
+          {services.length
+            ? 'The service API is unavailable. Showing saved local services; any wait estimate will be labelled as a local fallback.'
+            : 'Services could not be loaded from the server. Check that the backend is running, then reload this page.'}
+        </div>
+      )}
       {userPage && dashboard ? <UserDashboard services={services} queue={queue} onJoin={joinQueue} notifications={notifications} unreadCount={unreadCount} onMarkAllRead={() => markAllRead('user')} /> : null}
       {userPage && location.pathname === '/user/join' ? <JoinQueuePage services={services} queue={queue} onJoin={joinQueue} onLeave={() => setLeaveConfirmOpen(true)} /> : null}
       {userPage && location.pathname === '/user/status' ? <QueueStatusPage queue={queue} onAdvance={advanceQueuePosition} onLeave={() => setLeaveConfirmOpen(true)} onStartAnother={startAnotherQueue} joinMessage={joinMessage} /> : null}
@@ -366,7 +441,7 @@ function WorkspacePage({ session }) {
       {userPage && location.pathname === '/user/settings' ? <AccountSettings email={session.email} /> : null}
       {userPage && leaveConfirmOpen && <div className="confirm-overlay"><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="leave-confirm-title"><h2 id="leave-confirm-title">Leave this queue?</h2><p>Your current place will be removed from this demo queue. You can join another service afterward.</p><div><button type="button" className="text-button" onClick={() => setLeaveConfirmOpen(false)}>Keep my place</button><button type="button" className="primary-button confirm-leave-button" onClick={confirmLeaveQueue}>Leave queue</button></div></section></div>}
       {!userPage && dashboard ? <AdminDashboardPage services={services} onToggleService={toggleAdminService} notifications={notifications} unreadCount={unreadCount} onMarkAllRead={() => markAllRead('admin')} /> : null}
-      {!userPage && location.pathname === '/admin/services' ? <AdminServicesPage services={services} onSaveService={saveAdminService} onToggleService={toggleAdminService} onDeleteService={deleteAdminService} /> : null}
+      {!userPage && location.pathname === '/admin/services' ? <AdminServicesPage services={services} onSaveService={saveAdminService} onToggleService={toggleAdminService} onDeleteService={deleteAdminService} apiError={serviceApiError} /> : null}
       {!userPage && location.pathname === '/admin/queues' ? <AdminQueuePage services={services} onToggleService={toggleAdminService} onServeNext={serveNextVisitor} onRemoveVisitor={removeQueueVisitor} onMoveVisitor={moveQueueVisitor} /> : null}
     </AppShell>
   );
