@@ -76,6 +76,28 @@ Labeled screenshots for the PDF live in [`docs/screenshots/`](docs/screenshots).
 8. Queue Management
 9. Notifications (in-app)
 
+## Assignment 3
+
+The Express API lives in `server/`. Person 1 added auth, Person 2 added services and wait-time estimates, Person 3 added queues and history. Person 4 (`wynetyme`) added notifications, the end-to-end tests, and coverage.
+
+```bash
+cd server
+npm install
+npm start          # http://127.0.0.1:4000/api
+npm test
+npm run test:coverage
+```
+
+From the repo root, `npm run dev` still serves the UI and proxies `/api` to that backend.
+
+**Person 4 (this assignment)**
+
+- `GET /api/users/:userId/notifications` plus mark-read / mark-all-read.
+- Notices are created when someone joins a queue and when they reach the front (position 2, then position 1). Served / left / removed also write a notice.
+- Frontend notification center reads the API instead of only `localStorage`.
+- Workflow tests cover auth → services → wait time → join → notifications → serve → history.
+- Integration notes: [`docs/INTEGRATION.md`](docs/INTEGRATION.md).
+
 ## Notes for later assignments
 
-The UI is built so Assignment 3 can replace the `localStorage` helpers in `src/queueData.js`, `src/notifications.js`, and `src/history.js` with API calls without rewriting the screens.
+The UI is built so later assignments can swap the remaining `localStorage` helpers (`src/queueData.js` service cache) for a database without rewriting the screens.

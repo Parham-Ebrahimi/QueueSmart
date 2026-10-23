@@ -107,3 +107,21 @@ export async function getUserHistory(userId, token) {
   const { history } = await apiRequest(`/users/${encodeURIComponent(userId)}/history`, { token });
   return history;
 }
+
+export async function getUserNotifications(userId, token) {
+  const { notifications } = await apiRequest(`/users/${encodeURIComponent(userId)}/notifications`, { token });
+  return notifications;
+}
+
+export async function markNotificationRead(userId, notificationId, token) {
+  const { notification } = await apiRequest(`/users/${encodeURIComponent(userId)}/notifications/${encodeURIComponent(notificationId)}/read`, {
+    method: 'POST',
+    token,
+  });
+  return notification;
+}
+
+export async function markAllNotificationsRead(userId, token) {
+  const { notifications } = await apiRequest(`/users/${encodeURIComponent(userId)}/notifications/read-all`, { method: 'POST', token });
+  return notifications;
+}

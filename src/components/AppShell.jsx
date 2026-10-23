@@ -8,10 +8,10 @@ import { formatRelativeTime } from '../store.js';
 
 const typeIcons = { status: CheckCircle2, service: Info, queue: Users };
 
-function NotificationsMenu({ role }) {
+function NotificationsMenu({ session }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
-  const { notifications, unreadCount } = useNotifications(role);
+  const { notifications, unreadCount } = useNotifications(session);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -39,7 +39,7 @@ function NotificationsMenu({ role }) {
         <div className="notification-popover" role="dialog" aria-label="Notifications">
           <div className="notification-popover-head">
             <strong>Notifications{unreadCount > 0 && <span className="unread-count">{unreadCount}</span>}</strong>
-            {notifications.length > 0 && <div className="notification-popover-actions">{unreadCount > 0 && <button type="button" className="link-button" onClick={() => markAllRead(role)}>Mark all read</button>}<button type="button" className="link-button muted" onClick={() => clearNotifications(role)}>Clear</button></div>}
+            {notifications.length > 0 && <div className="notification-popover-actions">{unreadCount > 0 && <button type="button" className="link-button" onClick={() => markAllRead(session)}>Mark all read</button>}<button type="button" className="link-button muted" onClick={() => clearNotifications(session)}>Clear</button></div>}
           </div>
           {notifications.length ? (
             <ul className="notification-list">
@@ -47,7 +47,7 @@ function NotificationsMenu({ role }) {
                 const Icon = typeIcons[item.type] || Users;
                 return (
                   <li key={item.id} className={item.read ? '' : 'unread'}>
-                    <button type="button" onClick={() => markRead(item.id)}>
+                    <button type="button" onClick={() => markRead(item.id, session)}>
                       <span className={`notification-type ${item.type}`}><Icon size={15} /></span>
                       <div><strong>{item.title}</strong><p>{item.message}</p><small>{formatRelativeTime(item.createdAt)}</small></div>
                     </button>
@@ -118,7 +118,7 @@ export default function AppShell({ session, profile = session, children, title }
           <div className="topbar-left"><button className="icon-button menu-button" aria-label="Open menu" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="topbar-title">{title}</span></div>
           <div className="topbar-actions">
             <span className="role-label">{session.role === 'admin' ? 'Admin view' : 'User view'}</span>
-            <NotificationsMenu role={session.role} />
+            <NotificationsMenu session={session} />
             <span className="avatar topbar-avatar">{initials}</span>
           </div>
         </header>
