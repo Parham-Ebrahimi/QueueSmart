@@ -9,11 +9,10 @@ import AccountSettings from './components/AccountSettings.jsx';
 import Brand from './components/Brand.jsx';
 import FormField from './components/FormField.jsx';
 import HistoryPage from './components/History.jsx';
-import { createService as createServiceApi, deleteService as deleteServiceApi, getServiceWaitTime, listServices as listServicesApi, loginAccount, registerAccount, updateService as updateServiceApi } from './api.js';
+import { createService as createServiceApi, deleteService as deleteServiceApi, getQueueEntry, joinQueue as joinQueueApi, leaveQueue as leaveQueueApi, listQueues, listServices as listServicesApi, loginAccount, moveQueueEntry, registerAccount, removeQueueEntry, serveNextInQueue, updateService as updateServiceApi } from './api.js';
 import { getSession, saveSession, validateAuth } from './auth.js';
-import { addHistoryEntry } from './history.js';
 import { addNotification, markAllRead, useNotifications } from './notifications.js';
-import { createServiceId, estimateWait, findService, getActiveQueue, joinService, leaveService, loadServices, moveVisitor, queueWaitMinutes, removeVisitor, resolveQueue, saveActiveQueue, saveServices, serveNext, waitingCount } from './queueData.js';
+import { applyQueueViews, createServiceId, findService, getActiveQueue, loadServices, queueWaitMinutes, resolveQueue, saveActiveQueue, saveServices, waitingCount } from './queueData.js';
 import { formatClock, formatRelativeTime } from './store.js';
 import { getUserProfile, subscribeToProfileUpdates } from './userProfile.js';
 
@@ -191,7 +190,7 @@ function JoinQueuePage({ services, queue, onJoin, onLeave }) {
   );
 }
 
-function QueueStatusPage({ queue, onAdvance, onLeave, onStartAnother, joinMessage }) {
+function QueueStatusPage({ queue, onRefresh, onLeave, onStartAnother, joinMessage }) {
   if (!queue) return <div className="empty-state"><div className="empty-icon"><Users size={26} /></div><h2>You’re not in a queue yet</h2><p>Choose an available service and join its queue to see your place here.</p><Link className="primary-button" to="/user/join">Find a service<ArrowRight size={17} /></Link></div>;
 
   const { service } = queue;
@@ -206,7 +205,7 @@ function QueueStatusPage({ queue, onAdvance, onLeave, onStartAnother, joinMessag
       ? 'An administrator removed you from this queue. You can join another service at any time.'
       : queue.status === 'almost-ready'
         ? 'Almost your turn. Please head to the service location now so you are ready when called.'
-        : 'This queue uses sample data. Use “Simulate next update” to preview how your position changes as people ahead of you are served.';
+        : 'Your position updates automatically every few seconds as people ahead of you are served.';
 
   return (
     <>
@@ -222,25 +221,82 @@ function QueueStatusPage({ queue, onAdvance, onLeave, onStartAnother, joinMessag
         <li className={isServed ? 'done' : isRemoved ? 'removed' : ''}><span /><strong>{isRemoved ? 'Removed' : 'Served'}</strong><small>{isServed ? 'Visit complete' : isRemoved ? 'Removed by an administrator' : 'Your turn at the counter'}</small></li>
       </ol>
       <div className={`queue-status-note ${isServed ? 'served-note' : ''} ${isRemoved ? 'removed-note' : ''}`}><Info size={17} /><p>{note}</p></div>
-      <div className="queue-status-actions">{finished ? <><Link className="primary-button" to="/user/dashboard">Back to dashboard<ArrowRight size={16} /></Link><button className="text-button" onClick={onStartAnother}>Join another queue</button></> : <><button className="primary-button" onClick={onAdvance}><RefreshCw size={16} />Simulate next update</button><button className="text-button danger" onClick={onLeave}>Leave queue</button></>}</div>
+      <div className="queue-status-actions">{finished ? <><Link className="primary-button" to="/user/dashboard">Back to dashboard<ArrowRight size={16} /></Link><button className="text-button" onClick={onStartAnother}>Join another queue</button></> : <><button className="primary-button" onClick={onRefresh}><RefreshCw size={16} />Refresh status</button><button className="text-button danger" onClick={onLeave}>Leave queue</button></>}</div>
     </section>
     </>
   );
 }
+
+// How often open workspace pages re-read queues, so users see admin actions and vice versa.
+const queuePollMs = 5000;
 
 function WorkspacePage({ session }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [services, setServices] = useState(() => loadServices());
   const [serviceApiError, setServiceApiError] = useState('');
+  const [queueError, setQueueError] = useState('');
   const [activeQueue, setActiveQueue] = useState(() => getActiveQueue());
+  const [activeEntry, setActiveEntry] = useState(null);
   const [profile, setProfile] = useState(() => getUserProfile(session.email));
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
   const [joinMessage, setJoinMessage] = useState('');
   const { notifications, unreadCount } = useNotifications(session.role);
-  const queue = resolveQueue(services, activeQueue);
+  const queue = resolveQueue(services, activeQueue, activeEntry);
   const previousPosition = useRef(queue?.position ?? null);
   const serviceSyncRequest = useRef(null);
+  const activeQueueRef = useRef(activeQueue);
+  activeQueueRef.current = activeQueue;
+  // Bumped on join/leave so a poll that started earlier cannot bring back a queue the user just left.
+  const queueGeneration = useRef(0);
+
+  // Updates the ref right away so a refresh started in the same handler already sees the new queue.
+  function replaceActiveQueue(next) {
+    activeQueueRef.current = next;
+    setActiveQueue(next);
+  }
+
+  function commitServices(next) {
+    setServices(next);
+    saveServices(next);
+  }
+
+  function mergeQueueViews(views) {
+    setServices(current => {
+      const next = applyQueueViews(current, views);
+      saveServices(next);
+      return next;
+    });
+  }
+
+  async function refreshQueues() {
+    const generation = queueGeneration.current;
+    const views = await listQueues(session.token);
+    mergeQueueViews(views);
+    if (session.role !== 'user' || generation !== queueGeneration.current) return;
+
+    const current = activeQueueRef.current;
+    if (!current) {
+      // Pick the queue back up if the server says this user is waiting (for example after signing in elsewhere).
+      const mine = views.find(view => view.myEntry)?.myEntry;
+      if (mine) {
+        previousPosition.current = mine.position;
+        setActiveEntry(mine);
+        setActiveQueue({ serviceId: mine.serviceId, entryId: mine.id, initialPosition: mine.initialPosition, joinedAt: mine.joinedAt });
+      }
+      return;
+    }
+    try {
+      const entry = await getQueueEntry(current.serviceId, current.entryId, session.token);
+      if (generation === queueGeneration.current) setActiveEntry(entry);
+    } catch (error) {
+      // The server forgets queues when it restarts, so drop an entry it no longer knows about.
+      if (error.status === 404 && generation === queueGeneration.current) {
+        setActiveQueue(null);
+        setActiveEntry(null);
+      }
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -254,30 +310,33 @@ function WorkspacePage({ session }) {
             remoteServices.push(await createServiceApi(service, session.token));
           }
         }
-        return { localServices, remoteServices };
+        return remoteServices;
       })();
     }
 
-    serviceSyncRequest.current.then(({ localServices, remoteServices }) => {
+    serviceSyncRequest.current.then(remoteServices => {
       if (cancelled) return;
-      const syncedServices = remoteServices.map(service => {
-        const local = findService(localServices, service.id);
-        return {
-          ...service,
-          averageMinutes: service.expectedDuration,
-          queue: local?.queue || [],
-          served: local?.served || [],
-          serverBacked: true,
-        };
-      });
+      const syncedServices = remoteServices.map(service => ({
+        ...service,
+        averageMinutes: service.expectedDuration,
+        queue: [],
+        served: [],
+        serverBacked: true,
+      }));
       setServices(syncedServices);
       saveServices(syncedServices);
       setServiceApiError('');
+      return refreshQueues();
     }).catch(error => {
       if (!cancelled) setServiceApiError(error.message);
     });
     return () => { cancelled = true; };
-  }, [session.role, session.token]);
+  }, [session.role, session.token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const timer = setInterval(() => refreshQueues().catch(() => {}), queuePollMs);
+    return () => clearInterval(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => saveActiveQueue(activeQueue), [activeQueue]);
   useEffect(() => subscribeToProfileUpdates(() => setProfile(getUserProfile(session.email))), [session.email]);
@@ -288,13 +347,12 @@ function WorkspacePage({ session }) {
     if (queue && (queue.status === 'served' || queue.status === 'removed')) setJoinMessage('');
   }, [queue?.status]);
 
-  // Record the outcome once when a queue entry finishes, and notify on position changes.
+  // Notify once when a queue entry finishes (the server records it in history), and on position changes.
   useEffect(() => {
     if (!queue || session.role !== 'user') return;
     const before = previousPosition.current;
     previousPosition.current = queue.position;
     if ((queue.status === 'served' || queue.status === 'removed') && !activeQueue.outcomeRecorded) {
-      addHistoryEntry(session.email, { serviceId: queue.service.id, serviceName: queue.service.name, joinedAt: queue.joinedAt, outcome: queue.status, position: queue.initialPosition });
       addNotification({ audience: 'user', type: 'status', title: queue.status === 'served' ? `You’ve been served at ${queue.service.name}` : `Removed from ${queue.service.name}`, message: queue.status === 'served' ? 'Thanks for visiting. This queue has been added to your history.' : 'An administrator removed you from this queue. You can join another service.' });
       setActiveQueue(current => (current ? { ...current, outcomeRecorded: true } : current));
       return;
@@ -309,56 +367,61 @@ function WorkspacePage({ session }) {
   const dashboard = location.pathname.endsWith('/dashboard');
   const userPage = session.role === 'user';
 
-  function commitServices(next) {
-    setServices(next);
-    saveServices(next);
-  }
-
   async function joinQueue(service) {
-    const position = waitingCount(service) + 1;
-    let waitMinutes = estimateWait(service, position);
-    let estimateSource = service.serverBacked ? 'API estimate based on position and service duration, not live queue data' : 'local position-based estimate';
-    let estimateWarning = '';
-    if (service.serverBacked) {
-      try {
-        ({ estimatedWaitMinutes: waitMinutes } = await getServiceWaitTime(service.id, position, session.token));
-      } catch (error) {
-        estimateSource = 'local position-based estimate';
-        estimateWarning = ` The API estimate was unavailable (${error.message}); showing the local estimate.`;
-      }
+    let entry;
+    try {
+      entry = await joinQueueApi(service.id, { name: profile.displayName }, session.token);
+    } catch (error) {
+      setQueueError(error.message);
+      if (error.code === 'ALREADY_IN_QUEUE') refreshQueues().catch(() => {});
+      return;
     }
-    const result = joinService(services, service.id, { name: profile.displayName, email: profile.email || session.email });
-    previousPosition.current = result.position;
-    commitServices(result.services);
-    setActiveQueue(result.activeQueue);
-    setJoinMessage(`You’ve joined ${service.name} at position #${result.position}. Estimated wait: about ${waitMinutes} min (${estimateSource}).${estimateWarning}`);
-    addNotification({ audience: 'user', type: 'queue', title: `Joined ${service.name}`, message: `You are #${result.position} in line. Estimated wait is about ${waitMinutes} min.` });
-    addNotification({ audience: 'admin', type: 'queue', title: `New visitor at ${service.name}`, message: `${profile.displayName} joined the queue (position #${result.position}).` });
+    queueGeneration.current += 1;
+    previousPosition.current = entry.position;
+    setQueueError('');
+    setActiveEntry(entry);
+    replaceActiveQueue({ serviceId: service.id, entryId: entry.id, initialPosition: entry.initialPosition, joinedAt: entry.joinedAt });
+    refreshQueues().catch(() => {});
+    setJoinMessage(`You’ve joined ${service.name} at position #${entry.position}. Estimated wait: about ${entry.estimatedWaitMinutes} min.`);
+    addNotification({ audience: 'user', type: 'queue', title: `Joined ${service.name}`, message: `You are #${entry.position} in line. Estimated wait is about ${entry.estimatedWaitMinutes} min.` });
+    addNotification({ audience: 'admin', type: 'queue', title: `New visitor at ${service.name}`, message: `${profile.displayName} joined the queue (position #${entry.position}).` });
     navigate('/user/status');
   }
 
-  function advanceQueuePosition() {
-    if (!queue || queue.position === 0) return;
-    const result = serveNext(services, queue.service.id);
-    if (result.served) commitServices(result.services);
+  function refreshQueueStatus() {
+    refreshQueues().then(() => setQueueError(''), error => setQueueError(error.message));
   }
 
-  function confirmLeaveQueue() {
+  async function confirmLeaveQueue() {
     if (queue && (queue.status === 'waiting' || queue.status === 'almost-ready')) {
-      commitServices(leaveService(services, queue.service.id, queue.entryId));
-      addHistoryEntry(session.email, { serviceId: queue.service.id, serviceName: queue.service.name, joinedAt: queue.joinedAt, outcome: 'left', position: queue.initialPosition });
+      try {
+        await leaveQueueApi(queue.service.id, session.token);
+      } catch (error) {
+        // NOT_IN_QUEUE means the server already ended this visit, so clearing it locally is still right.
+        if (error.code !== 'NOT_IN_QUEUE') {
+          setQueueError(error.message);
+          setLeaveConfirmOpen(false);
+          return;
+        }
+      }
       addNotification({ audience: 'user', type: 'status', title: `Left ${queue.service.name}`, message: 'Your place in line was released. You can join another service any time.' });
       addNotification({ audience: 'admin', type: 'queue', title: `Visitor left ${queue.service.name}`, message: `${profile.displayName} left the queue.` });
     }
+    queueGeneration.current += 1;
     previousPosition.current = null;
-    setActiveQueue(null);
+    replaceActiveQueue(null);
+    setActiveEntry(null);
     setLeaveConfirmOpen(false);
     setJoinMessage('');
+    setQueueError('');
+    refreshQueues().catch(() => {});
   }
 
   function startAnotherQueue() {
+    queueGeneration.current += 1;
     previousPosition.current = null;
-    setActiveQueue(null);
+    replaceActiveQueue(null);
+    setActiveEntry(null);
     setJoinMessage('');
     navigate('/user/join');
   }
@@ -403,29 +466,43 @@ function WorkspacePage({ session }) {
     if (service) addNotification({ audience: 'admin', type: 'service', title: `${service.name} deleted`, message: 'The service and its queue were removed.' });
   }
 
+  async function runQueueAction(action) {
+    try {
+      await action();
+      setQueueError('');
+    } catch (error) {
+      setQueueError(error.message);
+      refreshQueues().catch(() => {});
+    }
+  }
+
   function serveNextVisitor(serviceId) {
-    const result = serveNext(services, serviceId);
-    if (!result.served) return;
-    const service = findService(services, serviceId);
-    commitServices(result.services);
-    addNotification({ audience: 'admin', type: 'status', title: `${result.served.name} was served`, message: `${service.name} now has ${waitingCount(findService(result.services, serviceId))} people waiting.` });
+    return runQueueAction(async () => {
+      const { served, queue: view } = await serveNextInQueue(serviceId, session.token);
+      mergeQueueViews([view]);
+      addNotification({ audience: 'admin', type: 'status', title: `${served.name} was served`, message: `${view.serviceName} now has ${view.waitingCount} people waiting.` });
+    });
   }
 
   function removeQueueVisitor(serviceId, visitorId) {
-    const result = removeVisitor(services, serviceId, visitorId);
-    if (!result.removed) return;
-    const service = findService(services, serviceId);
-    commitServices(result.services);
-    addNotification({ audience: 'admin', type: 'queue', title: `${result.removed.name} removed`, message: `Removed from the ${service.name} queue.` });
+    return runQueueAction(async () => {
+      const { removed, queue: view } = await removeQueueEntry(serviceId, visitorId, session.token);
+      mergeQueueViews([view]);
+      addNotification({ audience: 'admin', type: 'queue', title: `${removed.name} removed`, message: `Removed from the ${view.serviceName} queue.` });
+    });
   }
 
   function moveQueueVisitor(serviceId, visitorId, direction) {
-    commitServices(moveVisitor(services, serviceId, visitorId, direction));
+    return runQueueAction(async () => {
+      const { queue: view } = await moveQueueEntry(serviceId, visitorId, direction, session.token);
+      mergeQueueViews([view]);
+    });
   }
 
   return (
     <AppShell session={session} profile={profile} title={page.title}>
       <div className="page-heading"><p className="eyebrow">{page.eyebrow}</p><h1>{userPage && dashboard ? `Good to see you, ${profile.displayName}` : page.heading}</h1><p>{page.description}</p></div>
+      {queueError && <div className="auth-alert" role="alert"><AlertCircle size={17} />{queueError}</div>}
       {userPage && location.pathname === '/user/join' && serviceApiError && (
         <div className="auth-alert" role="alert">
           <AlertCircle size={17} />
@@ -436,10 +513,10 @@ function WorkspacePage({ session }) {
       )}
       {userPage && dashboard ? <UserDashboard services={services} queue={queue} onJoin={joinQueue} notifications={notifications} unreadCount={unreadCount} onMarkAllRead={() => markAllRead('user')} /> : null}
       {userPage && location.pathname === '/user/join' ? <JoinQueuePage services={services} queue={queue} onJoin={joinQueue} onLeave={() => setLeaveConfirmOpen(true)} /> : null}
-      {userPage && location.pathname === '/user/status' ? <QueueStatusPage queue={queue} onAdvance={advanceQueuePosition} onLeave={() => setLeaveConfirmOpen(true)} onStartAnother={startAnotherQueue} joinMessage={joinMessage} /> : null}
-      {userPage && location.pathname === '/user/history' ? <HistoryPage email={session.email} /> : null}
+      {userPage && location.pathname === '/user/status' ? <QueueStatusPage queue={queue} onRefresh={refreshQueueStatus} onLeave={() => setLeaveConfirmOpen(true)} onStartAnother={startAnotherQueue} joinMessage={joinMessage} /> : null}
+      {userPage && location.pathname === '/user/history' ? <HistoryPage session={session} /> : null}
       {userPage && location.pathname === '/user/settings' ? <AccountSettings email={session.email} /> : null}
-      {userPage && leaveConfirmOpen && <div className="confirm-overlay"><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="leave-confirm-title"><h2 id="leave-confirm-title">Leave this queue?</h2><p>Your current place will be removed from this demo queue. You can join another service afterward.</p><div><button type="button" className="text-button" onClick={() => setLeaveConfirmOpen(false)}>Keep my place</button><button type="button" className="primary-button confirm-leave-button" onClick={confirmLeaveQueue}>Leave queue</button></div></section></div>}
+      {userPage && leaveConfirmOpen && <div className="confirm-overlay"><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="leave-confirm-title"><h2 id="leave-confirm-title">Leave this queue?</h2><p>Your current place in this queue will be released. You can join another service afterward.</p><div><button type="button" className="text-button" onClick={() => setLeaveConfirmOpen(false)}>Keep my place</button><button type="button" className="primary-button confirm-leave-button" onClick={confirmLeaveQueue}>Leave queue</button></div></section></div>}
       {!userPage && dashboard ? <AdminDashboardPage services={services} onToggleService={toggleAdminService} notifications={notifications} unreadCount={unreadCount} onMarkAllRead={() => markAllRead('admin')} /> : null}
       {!userPage && location.pathname === '/admin/services' ? <AdminServicesPage services={services} onSaveService={saveAdminService} onToggleService={toggleAdminService} onDeleteService={deleteAdminService} apiError={serviceApiError} /> : null}
       {!userPage && location.pathname === '/admin/queues' ? <AdminQueuePage services={services} onToggleService={toggleAdminService} onServeNext={serveNextVisitor} onRemoveVisitor={removeQueueVisitor} onMoveVisitor={moveQueueVisitor} /> : null}

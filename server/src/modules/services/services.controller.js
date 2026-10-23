@@ -6,6 +6,7 @@ import {
   removeService,
   updateService as saveServiceUpdate,
 } from '../../data/serviceStore.js';
+import { closeOutQueue } from '../queues/queues.service.js';
 import { isValidServiceId, validateCreateService, validateUpdateService, SERVICE_DURATION_MAX, SERVICE_DURATION_MIN } from './services.validation.js';
 
 function assertValid({ errors, value }) {
@@ -40,9 +41,11 @@ export function deleteService(req, res) {
   if (!isValidServiceId(req.params.id)) {
     throw ApiError.validation({ id: 'Service ID is invalid.' });
   }
-  const service = removeService(req.params.id);
-  if (!service) throw ApiError.notFound('Service not found.');
-  res.json({ service });
+  const current = findServiceById(req.params.id);
+  if (!current) throw ApiError.notFound('Service not found.');
+  // Anyone still waiting is recorded as removed before the service disappears.
+  closeOutQueue(current);
+  res.json({ service: removeService(req.params.id) });
 }
 
 export function getWaitTime(req, res) {

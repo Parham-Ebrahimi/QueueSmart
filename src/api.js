@@ -69,3 +69,41 @@ export async function deleteService(id, token) {
 export function getServiceWaitTime(id, position, token) {
   return apiRequest(`/queues/${encodeURIComponent(id)}/wait-time?position=${encodeURIComponent(position)}`, { token });
 }
+
+// Queues: administrators get every waiting entry, users get counts plus their own entry (myEntry).
+export async function listQueues(token) {
+  const { queues } = await apiRequest('/queues', { token });
+  return queues;
+}
+
+export async function joinQueue(serviceId, { name, priority } = {}, token) {
+  const { entry } = await apiRequest(`/queues/${encodeURIComponent(serviceId)}/join`, { method: 'POST', body: { name, priority }, token });
+  return entry;
+}
+
+export async function leaveQueue(serviceId, token) {
+  const { entry } = await apiRequest(`/queues/${encodeURIComponent(serviceId)}/leave`, { method: 'POST', token });
+  return entry;
+}
+
+export async function getQueueEntry(serviceId, entryId, token) {
+  const { entry } = await apiRequest(`/queues/${encodeURIComponent(serviceId)}/entries/${encodeURIComponent(entryId)}`, { token });
+  return entry;
+}
+
+export function serveNextInQueue(serviceId, token) {
+  return apiRequest(`/queues/${encodeURIComponent(serviceId)}/serve-next`, { method: 'POST', token });
+}
+
+export function removeQueueEntry(serviceId, entryId, token) {
+  return apiRequest(`/queues/${encodeURIComponent(serviceId)}/entries/${encodeURIComponent(entryId)}`, { method: 'DELETE', token });
+}
+
+export function moveQueueEntry(serviceId, entryId, direction, token) {
+  return apiRequest(`/queues/${encodeURIComponent(serviceId)}/entries/${encodeURIComponent(entryId)}/move`, { method: 'POST', body: { direction }, token });
+}
+
+export async function getUserHistory(userId, token) {
+  const { history } = await apiRequest(`/users/${encodeURIComponent(userId)}/history`, { token });
+  return history;
+}
