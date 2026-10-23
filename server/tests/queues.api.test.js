@@ -2,6 +2,7 @@ import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { resetHistory } from '../src/data/historyStore.js';
+import { resetNotifications } from '../src/data/notificationStore.js';
 import { resetQueues } from '../src/data/queueStore.js';
 import { createService, resetServices } from '../src/data/serviceStore.js';
 import { signToken } from '../src/utils/tokens.js';
@@ -30,6 +31,7 @@ beforeEach(() => {
   resetServices();
   resetQueues();
   resetHistory();
+  resetNotifications();
   createService({ id: 'help-desk', name: 'Help Desk', description: 'Tech support.', expectedDuration: 5, priority: 'high' });
   createService({ id: 'advising', name: 'Advising', description: 'Course planning.', expectedDuration: 10, priority: 'medium' });
 });
