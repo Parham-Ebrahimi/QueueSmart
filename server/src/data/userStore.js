@@ -4,14 +4,18 @@ import { randomUUID } from 'node:crypto';
 // whenever the server restarts. Replace these functions with queries in Assignment 4.
 const usersByEmail = new Map();
 
-export function createUser({ email, passwordHash, role }) {
-  const user = { id: `usr_${randomUUID()}`, email, passwordHash, role, createdAt: new Date().toISOString() };
+export function createUser({ id, email, passwordHash, role }) {
+  const user = { id: id || `usr_${randomUUID()}`, email, passwordHash, role, createdAt: new Date().toISOString() };
   usersByEmail.set(email, user);
   return user;
 }
 
 export function findUserByEmail(email) {
   return usersByEmail.get(email) || null;
+}
+
+export function listUsers() {
+  return [...usersByEmail.values()].map(user => ({ ...user }));
 }
 
 // Never send password hashes to the client.
