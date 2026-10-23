@@ -30,7 +30,9 @@ function mergeNotices(session, localItems, remoteItems) {
 export async function syncNotifications(session) {
   if (!session?.id || !session.token) return [];
   const notifications = await getUserNotifications(session.id, session.token);
-  remoteStore.write(notifications);
+  // Keep an optimistic read if a mark-read request is still in flight.
+  const alreadyRead = new Set(remoteStore.read().filter(item => item.read).map(item => item.id));
+  remoteStore.write(notifications.map(item => (alreadyRead.has(item.id) ? { ...item, read: true } : item)));
   return notifications;
 }
 
