@@ -35,8 +35,20 @@ export function loginAccount({ email, password, role }) {
   return apiRequest('/auth/login', { method: 'POST', body: { email, password, role } });
 }
 
-export function registerAccount({ email, password, confirmPassword, role }) {
-  return apiRequest('/auth/register', { method: 'POST', body: { email, password, confirmPassword, role } });
+export function registerAccount({ fullName, email, password, confirmPassword, role }) {
+  return apiRequest('/auth/register', { method: 'POST', body: { fullName, email, password, confirmPassword, role } });
+}
+
+export function getProfile(token) {
+  return apiRequest('/auth/profile', { token });
+}
+
+export function updateProfile(details, token) {
+  return apiRequest('/auth/profile', { method: 'PATCH', body: details, token });
+}
+
+export function changePassword(details, token) {
+  return apiRequest('/auth/change-password', { method: 'POST', body: details, token });
 }
 
 function toServicePayload(service) {

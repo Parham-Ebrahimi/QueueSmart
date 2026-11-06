@@ -9,16 +9,16 @@ import AccountSettings from './components/AccountSettings.jsx';
 import Brand from './components/Brand.jsx';
 import FormField from './components/FormField.jsx';
 import HistoryPage from './components/History.jsx';
-import { createService as createServiceApi, deleteService as deleteServiceApi, getQueueEntry, joinQueue as joinQueueApi, leaveQueue as leaveQueueApi, listQueues, listServices as listServicesApi, loginAccount, moveQueueEntry, registerAccount, removeQueueEntry, serveNextInQueue, updateService as updateServiceApi } from './api.js';
+import { createService as createServiceApi, deleteService as deleteServiceApi, getProfile, getQueueEntry, joinQueue as joinQueueApi, leaveQueue as leaveQueueApi, listQueues, listServices as listServicesApi, loginAccount, moveQueueEntry, registerAccount, removeQueueEntry, serveNextInQueue, updateService as updateServiceApi } from './api.js';
 import { getSession, saveSession, validateAuth } from './auth.js';
 import { addNotification, markAllRead, syncNotifications, useNotifications } from './notifications.js';
 import { applyQueueViews, createServiceId, findService, getActiveQueue, loadServices, queueWaitMinutes, resolveQueue, saveActiveQueue, saveServices, waitingCount } from './queueData.js';
 import { formatClock, formatRelativeTime } from './store.js';
-import { getUserProfile, subscribeToProfileUpdates } from './userProfile.js';
+import { getUserProfile } from './userProfile.js';
 
 function AuthPage({ isRegister }) {
   const navigate = useNavigate();
-  const [values, setValues] = useState({ email: '', password: '', confirmPassword: '', role: 'user' });
+  const [values, setValues] = useState({ fullName: '', email: '', password: '', confirmPassword: '', role: 'user' });
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState('');
@@ -75,6 +75,7 @@ function AuthPage({ isRegister }) {
                 <button type="button" className={values.role === 'user' ? 'selected' : ''} onClick={() => chooseRole('user')}>User</button>
                 <button type="button" className={values.role === 'admin' ? 'selected' : ''} onClick={() => chooseRole('admin')}>Administrator</button>
               </div>
+              {isRegister && <FormField label="Full name" id="fullName" name="fullName" type="text" placeholder="Your full name" autoComplete="name" maxLength={100} value={values.fullName} onChange={change} error={errors.fullName} required />}
               <FormField label="Email address" id="email" name="email" type="email" placeholder="you@example.com" autoComplete="email" maxLength={254} value={values.email} onChange={change} error={errors.email} required />
               <div className="password-field">
                 <FormField label="Password" id="password" name="password" type={showPassword ? 'text' : 'password'} placeholder={isRegister ? 'At least 8 characters' : 'Enter your password'} autoComplete={isRegister ? 'new-password' : 'current-password'} maxLength={128} value={values.password} onChange={change} error={errors.password} required />
@@ -110,7 +111,7 @@ const pageContent = {
   '/user/dashboard': { title: 'Dashboard', eyebrow: 'YOUR WORKSPACE', heading: 'Good to see you', description: 'Keep track of your queues and find the services you need.' },
   '/user/join': { title: 'Join a queue', eyebrow: 'SERVICES', heading: 'Find a service', description: 'Choose an open service and join its queue in a few seconds.' },
   '/user/status': { title: 'Queue status', eyebrow: 'YOUR PLACE', heading: 'Queue status', description: 'Track your place in line and get a clear estimate of your wait.' },
-  '/user/settings': { title: 'Account settings', eyebrow: 'YOUR ACCOUNT', heading: 'Account settings', description: 'Manage the profile details used in your QueueSmart demo.' },
+  '/user/settings': { title: 'Account settings', eyebrow: 'YOUR ACCOUNT', heading: 'Account settings', description: 'Manage your profile and password.' },
   '/user/history': { title: 'History', eyebrow: 'PAST VISITS', heading: 'Queue history', description: 'Every queue you have joined, with the date, service, and outcome.' },
   '/admin/dashboard': { title: 'Dashboard', eyebrow: 'ADMIN WORKSPACE', heading: 'Service overview', description: 'See activity across your organization at a glance.' },
   '/admin/services': { title: 'Services', eyebrow: 'ADMIN WORKSPACE', heading: 'Services', description: 'Create and manage the services your organization offers.' },
@@ -340,7 +341,13 @@ function WorkspacePage({ session }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => saveActiveQueue(activeQueue), [activeQueue]);
-  useEffect(() => subscribeToProfileUpdates(() => setProfile(getUserProfile(session.email))), [session.email]);
+  useEffect(() => {
+    let active = true;
+    getProfile(session.token).then(({ profile: saved }) => {
+      if (active) setProfile({ displayName: saved.fullName, email: saved.email, contact: saved.contact });
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [session.token]);
   useEffect(() => {
     if (location.pathname !== '/user/status') setJoinMessage('');
   }, [location.pathname]);
@@ -509,7 +516,7 @@ function WorkspacePage({ session }) {
       {userPage && location.pathname === '/user/join' ? <JoinQueuePage services={services} queue={queue} onJoin={joinQueue} onLeave={() => setLeaveConfirmOpen(true)} /> : null}
       {userPage && location.pathname === '/user/status' ? <QueueStatusPage queue={queue} onRefresh={refreshQueueStatus} onLeave={() => setLeaveConfirmOpen(true)} onStartAnother={startAnotherQueue} joinMessage={joinMessage} /> : null}
       {userPage && location.pathname === '/user/history' ? <HistoryPage session={session} /> : null}
-      {userPage && location.pathname === '/user/settings' ? <AccountSettings email={session.email} /> : null}
+      {userPage && location.pathname === '/user/settings' ? <AccountSettings session={session} profile={profile} onProfileSaved={setProfile} /> : null}
       {userPage && leaveConfirmOpen && <div className="confirm-overlay"><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="leave-confirm-title"><h2 id="leave-confirm-title">Leave this queue?</h2><p>Your current place in this queue will be released. You can join another service afterward.</p><div><button type="button" className="text-button" onClick={() => setLeaveConfirmOpen(false)}>Keep my place</button><button type="button" className="primary-button confirm-leave-button" onClick={confirmLeaveQueue}>Leave queue</button></div></section></div>}
       {!userPage && dashboard ? <AdminDashboardPage services={services} onToggleService={toggleAdminService} notifications={notifications} unreadCount={unreadCount} onMarkAllRead={() => markAllRead(session)} /> : null}
       {!userPage && location.pathname === '/admin/services' ? <AdminServicesPage services={services} onSaveService={saveAdminService} onToggleService={toggleAdminService} onDeleteService={deleteAdminService} apiError={serviceApiError} /> : null}

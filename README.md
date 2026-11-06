@@ -1,8 +1,8 @@
 # QueueSmart
 
-QueueSmart is a front-end demo for a campus queue-management app. Members join a service queue and watch their place in line. Administrators create services, open or close queues, reorder or remove visitors, and serve the next person.
+QueueSmart is a campus queue-management app. Members join a service queue and watch their place in line. Administrators create services, open or close queues, reorder or remove visitors, and serve the next person.
 
-This repository is the Assignment 2 (UI / UX and front-end) submission. There is no backend. All data is mocked and stored in the browser (`localStorage`).
+The repository includes the Assignment 2 frontend, Assignment 3 Express API, and Assignment 4 account database. Service and queue data still use the existing A3 stores.
 
 ## Run locally
 
@@ -11,7 +11,9 @@ npm install
 npm run dev
 ```
 
-Open [http://127.0.0.1:5173](http://127.0.0.1:5173). Sign in or register with any valid email and an 8+ character password. Choose **User** or **Administrator** before submitting — the two roles have different workspaces.
+In a second terminal, run `npm install` and `npm start` from `server/` to start the API. The frontend proxies `/api` requests to that server.
+
+Open [http://127.0.0.1:5173](http://127.0.0.1:5173). Register with your full name, email, and an 8+ character password. Choose **User** or **Administrator** before submitting; the two roles have different workspaces.
 
 ```bash
 npm run build    # production build
@@ -101,3 +103,11 @@ From the repo root, `npm run dev` still serves the UI and proxies `/api` to that
 ## Notes for later assignments
 
 The UI is built so later assignments can swap the remaining `localStorage` helpers (`src/queueData.js` service cache) for a database without rewriting the screens.
+
+## Assignment 4: Accounts and Profiles
+
+Registration, login, profile updates, and password changes now use SQLite through the Express API. The account schema is in [`server/src/data/schema.sql`](server/src/data/schema.sql): `user_credentials.id` is the primary key, `user_credentials.email` is unique (case-insensitive), and `user_profiles.user_id` is both a primary key and a foreign key to the credentials row. Passwords are stored as bcrypt hashes, never as plain text. Profile data is read from the database on sign-in and when the workspace opens.
+
+Use Node.js 24 or newer. From `server/`, run `npm install`, then `npm start`. The database is created at `server/data/queuesmart.sqlite` on first use; set `DATABASE_PATH` to use another location. Test runs use an in-memory database unless `DATABASE_PATH` is set. Run `npm run test:coverage` from `server/` for the coverage report. The SQLite database file is ignored by Git.
+
+The new authenticated routes are `GET /api/auth/profile`, `PATCH /api/auth/profile`, and `POST /api/auth/change-password`. The remaining service, queue, history, and notification stores are still separate A3 work and are not part of this accounts change.

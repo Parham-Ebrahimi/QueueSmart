@@ -24,6 +24,11 @@ export function validateAuth(values, isRegister) {
   const errors = {};
   const email = values.email.trim();
 
+  if (isRegister) {
+    if (!values.fullName?.trim()) errors.fullName = 'Full name is required.';
+    else if (values.fullName.trim().length > 100) errors.fullName = 'Full name must be 100 characters or fewer.';
+  }
+
   if (!email) errors.email = 'Email is required.';
   else if (email.length > 254) errors.email = 'Email must be 254 characters or fewer.';
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = 'Enter a valid email address.';
