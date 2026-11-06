@@ -23,7 +23,15 @@ export function createService(req, res) {
   if (input.id && findServiceById(input.id)) {
     throw ApiError.conflict('A service with this ID already exists.', { id: 'Choose a different service ID.' }, 'SERVICE_ID_TAKEN');
   }
-  const service = saveService(input);
+  let service;
+  try {
+    service = saveService(input);
+  } catch (error) {
+    if (error?.code === 'ERR_SQLITE_CONSTRAINT_PRIMARYKEY' || error?.code === 'ERR_SQLITE_CONSTRAINT_UNIQUE') {
+      throw ApiError.conflict('A service with this ID already exists.', { id: 'Choose a different service ID.' }, 'SERVICE_ID_TAKEN');
+    }
+    throw error;
+  }
   res.status(201).json({ service });
 }
 

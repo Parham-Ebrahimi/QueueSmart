@@ -65,7 +65,7 @@ function cloneDefaults() {
 export function loadServices() {
   try {
     const value = JSON.parse(localStorage.getItem(servicesKey));
-    if (Array.isArray(value) && value.length) return value.map(normalizeService);
+    if (Array.isArray(value)) return value.map(normalizeService);
   } catch {
     // Fall through to the seeded demo services.
   }

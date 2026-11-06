@@ -1,7 +1,8 @@
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
-import { resetServices, updateService as updateStoredService } from '../src/data/serviceStore.js';
+import { getDatabase } from '../src/data/database.js';
+import { resetServices } from '../src/data/serviceStore.js';
 import { signToken } from '../src/utils/tokens.js';
 
 const app = createApp();
@@ -154,6 +155,59 @@ describe('service management API', () => {
     });
   });
 
+  it('enforces database constraints for service fields and identifiers', () => {
+    const insert = getDatabase().prepare(`INSERT INTO services (
+      service_id, name, description, expected_duration, priority, category,
+      location, open_until, is_open, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const validRow = {
+      name: 'Service',
+      description: 'Description',
+      expectedDuration: 10,
+      priority: 'medium',
+      category: 'Support',
+      location: 'Room 10',
+      openUntil: '5:00 PM',
+      isOpen: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const save = (id, fields) => insert.run(
+      id,
+      fields.name,
+      fields.description,
+      fields.expectedDuration,
+      fields.priority,
+      fields.category,
+      fields.location,
+      fields.openUntil,
+      fields.isOpen,
+      fields.createdAt,
+      fields.updatedAt,
+    );
+
+    for (const invalid of [
+      { description: '' },
+      { description: '   ' },
+      { name: '' },
+      { name: 'n'.repeat(101) },
+      { description: 'd'.repeat(501) },
+      { expectedDuration: 0 },
+      { expectedDuration: 481 },
+      { priority: 'urgent' },
+      { category: 'c'.repeat(41) },
+      { location: 'l'.repeat(121) },
+      { openUntil: '25:00 PM' },
+      { isOpen: 2 },
+    ]) {
+      expect(() => save(`invalid-${Object.keys(invalid)[0]}`, { ...validRow, ...invalid })).toThrow();
+    }
+
+    expect(() => save('invalid-id!', validRow)).toThrow();
+    save('database-service', validRow);
+    expect(() => save('database-service', validRow)).toThrow();
+  });
+
   it.each([
     [{ name: 123 }, 'name', 'Service name must be text.'],
     [{ description: false }, 'description', 'Description must be text.'],
@@ -292,13 +346,14 @@ describe('GET /api/queues/:id/wait-time', () => {
     expect(res.body.error.details.id).toBe('Service ID is invalid.');
   });
 
-  it.each([0, undefined, '10'])('does not return a misleading estimate for invalid stored duration %j', async expectedDuration => {
-    updateStoredService('student-services', { expectedDuration });
+  it.each([0, 481, 1.5, null])('prevents invalid stored duration %j and estimates from the database value', async expectedDuration => {
+    expect(() => getDatabase().prepare(
+      'UPDATE services SET expected_duration = ? WHERE service_id = ?',
+    ).run(expectedDuration, 'student-services')).toThrow();
+
     const res = await authorized(userToken, 'get', '/api/queues/student-services/wait-time?position=2');
-    expect(res.status).toBe(500);
-    expect(res.body).toEqual({
-      error: { code: 'INVALID_SERVICE_DATA', message: 'Wait time is unavailable for this service.' },
-    });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ expectedDuration: 12, estimatedWaitMinutes: 12 });
   });
 
   it('returns not found when the service does not exist', async () => {

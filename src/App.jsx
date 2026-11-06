@@ -304,15 +304,8 @@ function WorkspacePage({ session }) {
     let cancelled = false;
     if (!serviceSyncRequest.current) {
       serviceSyncRequest.current = (async () => {
-        const localServices = loadServices();
-        let remoteServices = (await listServicesApi(session.token)).services;
-        if (!remoteServices.length && session.role === 'admin') {
-          remoteServices = [];
-          for (const service of localServices) {
-            remoteServices.push(await createServiceApi(service, session.token));
-          }
-        }
-        return remoteServices;
+        loadServices();
+        return (await listServicesApi(session.token)).services;
       })();
     }
 

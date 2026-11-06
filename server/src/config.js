@@ -12,7 +12,7 @@ const config = {
   // Fewer bcrypt rounds keep the test suite fast; real logins use the default cost.
   bcryptRounds: env === 'test' ? 4 : 10,
   jsonBodyLimit: '10kb',
-  databasePath: process.env.DATABASE_PATH || (env === 'test' ? ':memory:' : 'data/queuesmart.sqlite'),
+  databasePath: env === 'test' ? ':memory:' : process.env.DATABASE_PATH || 'data/queuesmart.sqlite',
 };
 
 export default config;
