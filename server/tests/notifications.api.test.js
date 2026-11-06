@@ -48,6 +48,7 @@ describe('GET /api/users/:userId/notifications', () => {
       title: 'Joined Help Desk',
       message: 'You are #1 in line. Estimated wait is about 0 min.',
       read: false,
+      status: 'sent',
       serviceName: 'Help Desk',
     });
   });
@@ -114,8 +115,8 @@ describe('marking notifications read', () => {
 
     const res = await as(avaToken, 'post', `/api/users/${ava.id}/notifications/${target.id}/read`);
     expect(res.status).toBe(200);
-    expect(res.body.notification.read).toBe(true);
-    expect((await as(avaToken, 'get', `/api/users/${ava.id}/notifications`)).body.notifications.find(item => item.id === target.id).read).toBe(true);
+    expect(res.body.notification).toMatchObject({ read: true, status: 'viewed' });
+    expect((await as(avaToken, 'get', `/api/users/${ava.id}/notifications`)).body.notifications.find(item => item.id === target.id)).toMatchObject({ read: true, status: 'viewed' });
   });
 
   it('marks every notice as read', async () => {

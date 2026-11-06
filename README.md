@@ -110,4 +110,13 @@ Registration, login, profile updates, and password changes now use SQLite throug
 
 Use Node.js 24 or newer. From `server/`, run `npm install`, then `npm start`. The database is created at `server/data/queuesmart.sqlite` on first use; set `DATABASE_PATH` to use another location. Test runs use an in-memory database unless `DATABASE_PATH` is set. Run `npm run test:coverage` from `server/` for the coverage report. The SQLite database file is ignored by Git.
 
-The new authenticated routes are `GET /api/auth/profile`, `PATCH /api/auth/profile`, and `POST /api/auth/change-password`. The remaining service, queue, history, and notification stores are still separate A3 work and are not part of this accounts change.
+The new authenticated routes are `GET /api/auth/profile`, `PATCH /api/auth/profile`, and `POST /api/auth/change-password`.
+
+**Person 4 (A4) — notifications, history, and shared SQLite**
+
+Queue notices and visit history use the same SQLite file as accounts, services, and queues (`server/src/data/schema.sql`, opened by `server/src/data/database.js`).
+
+- `notifications`: user id, message, created timestamp, and status (`sent` until the user marks it read, then `viewed`). Title, type, and event are stored so the existing notification APIs keep working.
+- `queue_history`: service, timestamps, and outcome for each finished visit. History stays readable after a service is deleted.
+- `GET /api/users/:userId/notifications` and `GET /api/users/:userId/history` read these tables. Mark-read sets `status` to `viewed`.
+- Restarting the API no longer drops notices or history as long as `server/data/queuesmart.sqlite` is still there.

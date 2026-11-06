@@ -1,6 +1,6 @@
 # Assignment 3 integration notes
 
-Notes from wiring the frontend to the Person 1–3 APIs and adding the notification endpoints. The backend keeps everything in memory, so a restart clears accounts, services, queues, history, and notifications.
+Notes from wiring the frontend to the Person 1–3 APIs and adding the notification endpoints. Assignment 4 stores accounts, services, queues, history, and notifications in SQLite (`server/data/queuesmart.sqlite` by default).
 
 ## What is wired
 
@@ -29,7 +29,7 @@ Service create / edit / open / close notices still stay in the browser. Those ar
 
 ## Issues we hit
 
-1. **Server restart wipes state.** After a restart the frontend already drops a queue entry that returns 404. History and notifications also start empty. Sign-in tokens from before the restart are still valid, but the user record is gone, so joining again works with the token even though `/api/auth/login` would fail until they register again.
+1. **Server restart keeps SQLite state.** Notices and history stay in `server/data/queuesmart.sqlite`. Tokens from before the restart still work if the user row is still there. If you delete the database file, register again.
 
 2. **One queue at a time.** A second join returns `ALREADY_IN_QUEUE` (409). The join screen already blocks this; the error still shows if the local ticket is out of date.
 

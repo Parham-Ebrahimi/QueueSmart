@@ -23,6 +23,7 @@ beforeEach(() => {
   resetNotifications();
   resetServices();
   resetUsers();
+  createUser({ id: 'user-ava', email: 'ava@example.com', passwordHash: 'x', role: 'user' });
   createService(service);
 });
 
@@ -128,8 +129,8 @@ describe('notifyAdminsOfJoin', () => {
 
 describe('notification store', () => {
   it('keeps the newest notice first and can mark one as read', async () => {
-    const first = addNotification({ userId: 'user-ava', title: 'First', event: 'joined', entryId: 'qe_1' });
-    const second = addNotification({ userId: 'user-ava', title: 'Second', event: 'joined', entryId: 'qe_2' });
+    const first = addNotification({ userId: 'user-ava', title: 'First', message: 'First notice', event: 'joined', entryId: 'qe_1' });
+    const second = addNotification({ userId: 'user-ava', title: 'Second', message: 'Second notice', event: 'joined', entryId: 'qe_2' });
     expect(listNotificationsForUser('user-ava').map(item => item.id)).toEqual([second.id, first.id]);
     expect(listNotificationsForUser('nobody')).toEqual([]);
   });
