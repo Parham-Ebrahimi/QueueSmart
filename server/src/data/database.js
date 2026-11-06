@@ -21,3 +21,17 @@ export function closeDatabase() {
   database?.close();
   database = undefined;
 }
+
+// Runs fn inside one transaction so a multi-step change is saved completely or not at all.
+export function transaction(fn) {
+  const db = getDatabase();
+  db.exec('BEGIN');
+  try {
+    const result = fn();
+    db.exec('COMMIT');
+    return result;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}

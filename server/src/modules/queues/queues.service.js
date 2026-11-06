@@ -1,6 +1,8 @@
+import { transaction } from '../../data/database.js';
 import { addHistoryEntry, listHistoryForUser } from '../../data/historyStore.js';
-import { createEntry, findEntryById, listEntries, listWaitingEntries, setWaitingOrder, updateEntry } from '../../data/queueStore.js';
+import { findEntryById, findWaitingEntryForUser, finishWaitingEntry, insertWaitingEntry, listRecentlyServed, listWaitingEntries, swapPositions } from '../../data/queueStore.js';
 import { findServiceById, listServices } from '../../data/serviceStore.js';
+import { findUserById } from '../../data/userStore.js';
 import ApiError from '../../utils/ApiError.js';
 import { notifyAdminsOfJoin, notifyApproachingFront, notifyJoined, notifyOutcome } from '../notifications/notifications.service.js';
 
@@ -26,31 +28,26 @@ function withPosition(entry, service, position) {
 }
 
 function positionedQueue(service) {
-  return listWaitingEntries(service.id).map((entry, index) => withPosition(entry, service, index + 1));
-}
-
-function findWaitingEntryForUser(userId) {
-  return listEntries(entry => entry.userId === userId && entry.status === 'waiting')[0] || null;
-}
-
-function takeOutOfLine(serviceId, entryId) {
-  setWaitingOrder(serviceId, listWaitingEntries(serviceId).filter(entry => entry.id !== entryId).map(entry => entry.id));
+  return listWaitingEntries(service.id).map(entry => withPosition(entry, service, entry.position));
 }
 
 // Ends a visit and writes the participation record for the user.
 function finishEntry(entry, service, outcome) {
   const endedAt = new Date().toISOString();
-  takeOutOfLine(service.id, entry.id);
-  const finished = updateEntry(entry.id, { status: outcome, endedAt });
-  addHistoryEntry({
-    userId: entry.userId,
-    entryId: entry.id,
-    serviceId: service.id,
-    serviceName: service.name,
-    joinedAt: entry.joinedAt,
-    endedAt,
-    outcome,
-    position: entry.initialPosition,
+  // The entry update and its history record are saved together or not at all.
+  const finished = transaction(() => {
+    const updated = finishWaitingEntry(entry.id, outcome, endedAt);
+    addHistoryEntry({
+      userId: entry.userId,
+      entryId: entry.id,
+      serviceId: service.id,
+      serviceName: service.name,
+      joinedAt: entry.joinedAt,
+      endedAt,
+      outcome,
+      position: entry.initialPosition,
+    });
+    return updated;
   });
   const positioned = withPosition(finished, service, 0);
   notifyOutcome(positioned, service, outcome);
@@ -69,24 +66,22 @@ function requireWaitingEntry(service, entryId) {
 export function joinQueue(serviceId, user, { name, priority }) {
   const service = requireService(serviceId);
   if (!service.isOpen) throw ApiError.conflict('This service is closed and is not accepting new visitors.', undefined, 'SERVICE_CLOSED');
+  // Queue entries reference the account, so a token for a deleted account cannot join.
+  if (!findUserById(user.id)) throw ApiError.unauthorized('Your account could not be found. Sign in again.', 'ACCOUNT_NOT_FOUND');
   if (findWaitingEntryForUser(user.id)) {
     throw ApiError.conflict('You are already waiting in a queue. Leave it before joining another.', undefined, 'ALREADY_IN_QUEUE');
   }
 
   const waiting = listWaitingEntries(serviceId);
   const index = insertionIndex(waiting, priority);
-  const entry = createEntry({
+  const entry = insertWaitingEntry({
     serviceId,
     userId: user.id,
-    email: user.email,
     name: name || user.email.split('@')[0],
     priority,
-    initialPosition: index + 1,
+    position: index + 1,
   });
-  const ids = waiting.map(item => item.id);
-  ids.splice(index, 0, entry.id);
-  setWaitingOrder(serviceId, ids);
-  const positioned = withPosition(entry, service, index + 1);
+  const positioned = withPosition(entry, service, entry.position);
   notifyJoined(user, positioned, service);
   notifyAdminsOfJoin(positioned, service);
   notifyApproachingFront(positionedQueue(service), service);
@@ -116,14 +111,13 @@ export function removeEntry(serviceId, entryId) {
 export function moveEntry(serviceId, entryId, direction) {
   const service = requireService(serviceId);
   requireWaitingEntry(service, entryId);
-  const ids = listWaitingEntries(serviceId).map(entry => entry.id);
-  const index = ids.indexOf(entryId);
+  const waiting = listWaitingEntries(serviceId);
+  const index = waiting.findIndex(entry => entry.id === entryId);
   const target = index + direction;
-  if (target < 0 || target >= ids.length) {
+  if (target < 0 || target >= waiting.length) {
     throw ApiError.conflict(`This visitor is already at the ${direction < 0 ? 'front' : 'back'} of the queue.`, undefined, 'CANNOT_MOVE');
   }
-  [ids[index], ids[target]] = [ids[target], ids[index]];
-  setWaitingOrder(serviceId, ids);
+  swapPositions(waiting[index].id, waiting[target].id);
   const queue = positionedQueue(service);
   notifyApproachingFront(queue, service);
   return queue;
@@ -155,9 +149,7 @@ function buildQueueView(service, viewer) {
   };
   if (viewer.role === 'admin') {
     view.entries = queue;
-    view.recentlyServed = listEntries(entry => entry.serviceId === service.id && entry.status === 'served')
-      .sort((a, b) => b.endedAt.localeCompare(a.endedAt))
-      .slice(0, RECENTLY_SERVED_LIMIT);
+    view.recentlyServed = listRecentlyServed(service.id, RECENTLY_SERVED_LIMIT).map(entry => withPosition(entry, service, 0));
   } else {
     view.myEntry = queue.find(entry => entry.userId === viewer.id) || null;
   }
@@ -172,9 +164,7 @@ export function getEntry(serviceId, entryId, viewer) {
     throw ApiError.notFound('Queue entry not found.');
   }
   const service = findServiceById(serviceId) || { expectedDuration: 0 };
-  if (entry.status !== 'waiting') return withPosition(entry, service, 0);
-  const index = listWaitingEntries(serviceId).findIndex(item => item.id === entryId);
-  return withPosition(entry, service, index + 1);
+  return withPosition(entry, service, entry.status === 'waiting' ? entry.position : 0);
 }
 
 export function getHistory(userId, viewer) {
