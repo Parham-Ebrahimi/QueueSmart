@@ -146,3 +146,21 @@ CREATE TABLE IF NOT EXISTS queue_history (
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS queue_history_by_user ON queue_history (user_id, ended_at);
+
+-- In-app notices. status is "sent" until the user marks them read ("viewed").
+CREATE TABLE IF NOT EXISTS notifications (
+  notification_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES user_credentials(id) ON DELETE CASCADE,
+  message TEXT NOT NULL CHECK (length(trim(message)) BETWEEN 1 AND 500),
+  created_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'viewed')),
+  title TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 120),
+  type TEXT NOT NULL DEFAULT 'queue' CHECK (type IN ('queue', 'status', 'service')),
+  event TEXT NOT NULL CHECK (length(trim(event)) BETWEEN 1 AND 40),
+  entry_id TEXT,
+  service_id TEXT,
+  service_name TEXT,
+  position INTEGER
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS notifications_by_user ON notifications (user_id, created_at);

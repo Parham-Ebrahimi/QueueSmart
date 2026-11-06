@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import config from '../config.js';
 
+// One SQLite file (or :memory: in tests) for every A4 module: accounts, services,
+// queues, history, and notifications. schema.sql is applied on first open.
 let database;
 
 export function getDatabase() {
