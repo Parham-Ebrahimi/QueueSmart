@@ -5,12 +5,14 @@ import { resetHistory } from '../src/data/historyStore.js';
 import { resetNotifications } from '../src/data/notificationStore.js';
 import { resetQueues } from '../src/data/queueStore.js';
 import { createService, resetServices } from '../src/data/serviceStore.js';
+import { createUser, resetUsers } from '../src/data/userStore.js';
 import { signToken } from '../src/utils/tokens.js';
 
 const app = createApp();
 const adminToken = signToken({ id: 'admin-1', email: 'admin@example.com', role: 'admin' });
 const members = ['ava', 'ben', 'cam', 'dee'].map(name => ({
   id: `user-${name}`,
+  email: `${name}@example.com`,
   token: signToken({ id: `user-${name}`, email: `${name}@example.com`, role: 'user' }),
 }));
 const [ava, ben, cam, dee] = members;
@@ -32,6 +34,9 @@ beforeEach(() => {
   resetQueues();
   resetHistory();
   resetNotifications();
+  resetUsers();
+  // Queue entries must belong to a stored account.
+  for (const member of members) createUser({ id: member.id, email: member.email, passwordHash: 'x', role: 'user' });
   createService({ id: 'help-desk', name: 'Help Desk', description: 'Tech support.', expectedDuration: 5, priority: 'high' });
   createService({ id: 'advising', name: 'Advising', description: 'Course planning.', expectedDuration: 10, priority: 'medium' });
 });

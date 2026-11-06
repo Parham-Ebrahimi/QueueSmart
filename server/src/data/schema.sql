@@ -82,3 +82,67 @@ WHEN length(NEW.service_id) NOT BETWEEN 1 AND 100
 BEGIN
   SELECT RAISE(ABORT, 'Service data does not satisfy its required constraints.');
 END;
+
+-- One queue per service. The triggers below create it with the service, keep its status in step
+-- with services.is_open, and the foreign key removes it when the service is deleted.
+CREATE TABLE IF NOT EXISTS queues (
+  queue_id TEXT PRIMARY KEY,
+  service_id TEXT NOT NULL UNIQUE REFERENCES services(service_id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+) STRICT;
+
+CREATE TRIGGER IF NOT EXISTS services_create_queue
+AFTER INSERT ON services
+BEGIN
+  INSERT INTO queues (queue_id, service_id, status, created_at, updated_at)
+  VALUES ('q_' || NEW.service_id, NEW.service_id, CASE NEW.is_open WHEN 1 THEN 'open' ELSE 'closed' END, NEW.created_at, NEW.created_at);
+END;
+
+CREATE TRIGGER IF NOT EXISTS services_sync_queue_status
+AFTER UPDATE OF is_open ON services
+BEGIN
+  UPDATE queues SET status = CASE NEW.is_open WHEN 1 THEN 'open' ELSE 'closed' END, updated_at = NEW.updated_at
+  WHERE service_id = NEW.service_id;
+END;
+
+-- Services saved before the queues table existed still get a queue.
+INSERT OR IGNORE INTO queues (queue_id, service_id, status, created_at, updated_at)
+SELECT 'q_' || service_id, service_id, CASE is_open WHEN 1 THEN 'open' ELSE 'closed' END, created_at, updated_at FROM services;
+
+-- A user's place in a queue. Waiting entries have positions 1..n within their queue;
+-- finished entries (served, left, removed) keep their row with position NULL.
+CREATE TABLE IF NOT EXISTS queue_entries (
+  entry_id TEXT PRIMARY KEY,
+  queue_id TEXT NOT NULL REFERENCES queues(queue_id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES user_credentials(id) ON DELETE CASCADE,
+  visitor_name TEXT NOT NULL CHECK (length(trim(visitor_name)) BETWEEN 1 AND 80),
+  priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('normal', 'high')),
+  status TEXT NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'served', 'left', 'removed')),
+  position INTEGER CHECK (position IS NULL OR position >= 1),
+  initial_position INTEGER NOT NULL CHECK (initial_position >= 1),
+  joined_at TEXT NOT NULL,
+  ended_at TEXT,
+  CHECK ((status = 'waiting') = (position IS NOT NULL)),
+  CHECK ((status = 'waiting') = (ended_at IS NULL))
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS queue_entries_by_queue ON queue_entries (queue_id, status, position);
+-- A user can wait in only one queue at a time.
+CREATE UNIQUE INDEX IF NOT EXISTS queue_entries_one_waiting_per_user ON queue_entries (user_id) WHERE status = 'waiting';
+
+-- Participation history. Service details are copied so a visit stays readable after its service is deleted.
+CREATE TABLE IF NOT EXISTS queue_history (
+  history_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES user_credentials(id) ON DELETE CASCADE,
+  entry_id TEXT NOT NULL,
+  service_id TEXT NOT NULL,
+  service_name TEXT NOT NULL,
+  joined_at TEXT NOT NULL,
+  ended_at TEXT NOT NULL,
+  outcome TEXT NOT NULL CHECK (outcome IN ('served', 'left', 'removed')),
+  position INTEGER NOT NULL CHECK (position >= 1)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS queue_history_by_user ON queue_history (user_id, ended_at);

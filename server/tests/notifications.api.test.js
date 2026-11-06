@@ -28,6 +28,8 @@ beforeEach(() => {
   resetUsers();
   createService({ id: 'help-desk', name: 'Help Desk', description: 'Tech support.', expectedDuration: 5, priority: 'high', location: 'Library' });
   createUser({ id: admin.id, email: admin.email, passwordHash: 'x', role: 'admin' });
+  // Queue entries must belong to a stored account.
+  for (const member of [ava, ben]) createUser({ ...member, passwordHash: 'x' });
 });
 
 describe('GET /api/users/:userId/notifications', () => {
